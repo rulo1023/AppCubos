@@ -3,6 +3,10 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+
+results2016LOPE37.xlsx
+
+
 # User-specific files
 *.rsuser
 *.suo
