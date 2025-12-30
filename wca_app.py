@@ -5,31 +5,43 @@ import functions as fn
 # 1. Configuración de la página
 st.set_page_config(page_title="WCA Dashboard", layout="wide")
 
-# Estilo CSS personalizado para que las métricas parezcan más un "mosaico"
+# Estilo CSS personalizado para el mosaico y FORZAR visualización horizontal en móvil
 st.markdown("""
     <style>
-    /* Cambia el tamaño del número */
-    [data-testid="stMetricValue"] { font-size: 35px; font-weight: bold; }
-    /* Personaliza el borde de los contenedores */
+    [data-testid="stMetricValue"] { font-size: 28px; font-weight: bold; }
     [data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 15px;
         background-color: #f8f9fa;
+        padding: 10px;
+    }
+    
+    /* TRUCO PARA MÓVIL: Evita que las columnas se apilen */
+    [data-testid="column"] {
+        min-width: 45% !important; /* Permite 2 columnas por fila en móviles */
+        flex: 1 1 45% !important;
+    }
+    
+    /* Ajuste para tablets o pantallas medianas */
+    @media (min-width: 768px) {
+        [data-testid="column"] {
+            min-width: 20% !important;
+            flex: 1 1 20% !important;
+        }
     }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🧩 WCA Statistics Mosaic")
+st.title("🎲 MyCubing")
 
-wca_id = st.text_input("Enter WCA ID (e.g., 2003BRAN01):", "")
+wca_id = st.text_input("Enter WCA ID (e.g., 2003BRUC01):", "")
 
 if wca_id:
     try:
         with st.spinner('Fetching WCA data...'):
             info = fn.get_wcaid_info(wca_id)
             
-            # Extraemos el código del país
             iso_code = info.get('person.country.iso2', 'N/A')
-            flag = fn.get_flag_emoji(iso_code) # <-- Convertimos a emoji
+            flag = fn.get_flag_emoji(iso_code)
 
             s333 = info.get('personal_records.333.single.best', 0) / 100
             a333 = info.get('personal_records.333.average.best', 0) / 100
@@ -41,53 +53,46 @@ if wca_id:
                 "Bronze": info.get('medals.bronze', 0),
                 "Comps": info.get('competition_count', 0),
                 "Country": iso_code,
-                "Flag": flag, # <-- Guardamos la bandera
+                "Flag": flag,
                 "Single333": f"{s333:.2f}s",
                 "Avg333": f"{a333:.2f}s"
             }
             podiums = stats["Gold"] + stats["Silver"] + stats["Bronze"]
 
         st.divider()
-        # Título con la bandera al lado del nombre
-        st.header(f"{stats['Flag']} {stats['Name']}'s Dashboard")
+        st.header(f"{stats['Flag']} {stats['Name']}")
 
-        # 3. El Mosaico con Bordes Redondeados (Grid de 4 columnas)
-        # Primera fila: Medallas
-        col1, col2, col3, col4 = st.columns(4)
+        # Agrupamos los elementos para que se vean bien en cuadrícula
+        # Usamos 2 columnas principales que dentro tendrán sus métricas
+        # O definimos filas de 2 en 2 para asegurar orden en móvil
+        
+        def render_metric(label, value):
+            with st.container(border=True):
+                st.metric(label=label, value=value)
 
-        with col1:
-            with st.container(border=True):
-                st.metric(label="🥇 Golds", value=stats["Gold"])
-        with col2:
-            with st.container(border=True):
-                st.metric(label="🥈 Silvers", value=stats["Silver"])
-        with col3:
-            with st.container(border=True):
-                st.metric(label="🥉 Bronzes", value=stats["Bronze"])
-        with col4:
-            with st.container(border=True):
-                st.metric(label="🗓️ Total Opens", value=stats["Comps"])
+        # Fila 1
+        col1, col2 = st.columns(2)
+        with col1: render_metric("🥇 Golds", stats["Gold"])
+        with col2: render_metric("🥈 Silvers", stats["Silver"])
 
-        # Segunda fila: Récords y Totales
-        col5, col6, col7, col8 = st.columns(4)
+        # Fila 2
+        col3, col4 = st.columns(2)
+        with col3: render_metric("🥉 Bronzes", stats["Bronze"])
+        with col4: render_metric("🗓️ Total Opens", stats["Comps"])
 
-        with col5:
-            with st.container(border=True):
-                st.metric(label="🏅 Total Podiums", value=podiums)
-        with col6:
-            with st.container(border=True):
-                st.metric(label="⏱️ 3x3 Single", value=stats["Single333"])
-        with col7:
-            with st.container(border=True):
-                st.metric(label="📊 3x3 Average", value=stats["Avg333"])
-        with col8:
-            with st.container(border=True):
-                # Mostramos la bandera grande en el mosaico
-                st.metric(label="Country", value=f"{stats['Flag']} {stats['Country']}")
+        # Fila 3
+        col5, col6 = st.columns(2)
+        with col5: render_metric("🏅 Podiums", podiums)
+        with col6: render_metric("⏱️ 3x3 Single", stats["Single333"])
 
-        # Gráfico decorativo
+        # Fila 4
+        col7, col8 = st.columns(2)
+        with col7: render_metric("📊 3x3 Average", stats["Avg333"])
+        with col8: render_metric("Country", f"{stats['Flag']} {stats['Country']}")
+
         st.write("")
         st.bar_chart({"Medals": [stats["Gold"], stats["Silver"], stats["Bronze"]]}, color="#FFD700")
 
     except Exception as e:
-        st.error(f"Error al obtener datos: {e}. Revisa si el WCA ID es correcto.")
+        st.error(f"Error: {e}")
+        
