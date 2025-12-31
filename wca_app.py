@@ -231,6 +231,7 @@ def render_activity_heatmap(data):
     max_year = heatmap_data.groupby('Year')['Count'].sum().idxmax()
     st.info(f"💡 Your most active year was **{max_year}**.")
 
+
 def render_competitions(data):
     st.header("🌍 Competitions History")
 
@@ -382,7 +383,7 @@ selection = st.sidebar.radio("Go to:", [
     "Summary", 
     "Personal Bests", 
     "Competitions", 
-    "Activity Heatmap", # <-- Nueva opción
+    "Competition Heatmap", 
     "Statistics", 
     "Progression"
 ])
