@@ -11,46 +11,37 @@ st.set_page_config(page_title="MyCubing Dashboard", layout="wide", page_icon="�
 
 # --- ESTILOS CSS ---
 st.markdown("""
-
     <style>
-
     [data-testid="stMetricValue"] { font-size: 24px; font-weight: bold; }
-
     [data-testid="stVerticalBlockBorderWrapper"] {
-
         border-radius: 15px;
-
         background-color: #f8f9fa;
-
         padding: 15px;
-
         margin-bottom: 10px;
-
     }
-
     .pr-card-title { font-size: 14px; color: #666; margin-bottom: 0px; }
-
     .pr-card-time { font-size: 26px; font-weight: 800; color: #31333F; margin: 5px 0; }
-
-    .pr-card-sub { font-size: 12px; color: #888; }
+    
+    /* Clase para el nombre de la competición con espacio extra debajo */
+    .pr-card-comp { 
+        font-size: 12px; 
+        color: #888; 
+        margin-bottom: 12px; /* Aquí controlas el "aire" o espacio vacío */
+        line-height: 1.2;
+    }
+    
+    /* Clase para la fecha */
+    .pr-card-date { 
+        font-size: 11px; 
+        color: #aaa; 
+        font-style: italic;
+    }
 
     [data-testid="column"] { min-width: 45% !important; flex: 1 1 45% !important; }
-
     @media (min-width: 768px) {
-
         [data-testid="column"] { min-width: 20% !important; flex: 1 1 20% !important; }
-
     }
-
-    .stDataFrame { width: 100%; }
-
-    /* --- ESTO ELIMINA LA MARCA DE AGUA --- */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    [data-testid="stToolbar"] {visibility: hidden;}
     </style>
-            
     """, unsafe_allow_html=True)
 
 # Diccionario de Eventos
