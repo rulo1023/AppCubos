@@ -2,6 +2,8 @@ import streamlit as st
 import time
 import functions as fn
 from datetime import datetime
+import pandas as pd
+
 
 event_dict = {"333": "3x3x3", "222": "2x2x2", "444": "4x4x4", "555": "5x5x5", "666": "6x6x6", "777": "7x7x7",
                     "333bf": "3x3x3 Blindfolded", "333oh": "3x3x3 One-Handed", "333fm": "3x3x3 Fewest Moves",
@@ -144,6 +146,60 @@ if wca_id:
         
         with col_new:
             render_pr_card("✨ **Newest Personal Record**", newest)
+
+        # --- SECCIÓN NUEVA: MAPA ---
+       
+        st.divider()
+        st.subheader("📍 Mapa de competiciones")
+
+        # Convertimos el generador en un DataFrame
+        with st.spinner("Cargando ubicaciones..."):
+            raw_map_data = list(fn.generate_map_data(wca_id))
+            map_df = pd.DataFrame(raw_map_data)
+
+        if not map_df.empty:
+            import pydeck as pdk
+            import numpy as np
+
+            # OPCIONAL: Si hay coordenadas idénticas, las separamos un poquito (Jitter)
+            # Esto evita que los puntos se solapen perfectamente en una misma ciudad
+            map_df['lat'] += np.random.uniform(-0.01, 0.01, size=len(map_df))
+            map_df['lon'] += np.random.uniform(-0.01, 0.01, size=len(map_df))
+
+            view_state = pdk.ViewState(
+                latitude=map_df['lat'].mean(),
+                longitude=map_df['lon'].mean(),
+                zoom=4,
+                pitch=0,
+            )
+
+            layer = pdk.Layer(
+                "ScatterplotLayer",
+                map_df,
+                get_position='[lon, lat]',
+                get_color='[255, 75, 75, 200]',
+                # Ajustes de tamaño dinámico:
+                radius_min_pixels=5,  # Tamaño mínimo aunque estés muy lejos
+                radius_max_pixels=15, # Tamaño máximo para que no tapen todo al acercarte
+                get_radius=5000,      # Radio base en metros
+                pickable=True,
+                opacity=0.8,
+                stroked=True,
+                filled=True,
+                line_width_min_pixels=1,
+                get_line_color=[255, 255, 255]
+            )
+
+            st.pydeck_chart(pdk.Deck(
+                map_style='https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+                initial_view_state=view_state,
+                layers=[layer],
+                tooltip={"text": "{nombre}\n📅 {fecha}"}
+            ))
+            
+        else:
+            st.info("No se encontraron coordenadas para las competiciones de este usuario.")
+            
     except Exception as e:
         st.error(f"Error loading data: {e}")
 

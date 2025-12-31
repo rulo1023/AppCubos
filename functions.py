@@ -281,13 +281,39 @@ def number_of_prs(wca_id):
 
     return pr_summary
 
+def generate_map_data(wca_id):
+    # Obtenemos los resultados para saber en qué competiciones participó
+    results_df = get_wca_results(wca_id)
+    if results_df.empty:
+        return
+
+    competitions = results_df['Competition'].unique()
+    
+    for competition in competitions:
+        comp_data = get_comp_data(competition)
+        
+        # Validación de que existan los datos y las coordenadas
+        if not comp_data or 'venue' not in comp_data or 'coordinates' not in comp_data['venue']:
+            continue
+            
+        name = comp_data.get('name', competition)
+        date_start = comp_data.get('date', {}).get('from', "")
+        date_end = comp_data.get('date', {}).get('till', "")
+        
+        lat = comp_data['venue']['coordinates'].get('latitude')
+        lon = comp_data['venue']['coordinates'].get('longitude')
+        
+        if lat is not None and lon is not None:
+            yield {
+                'lat': float(lat),
+                'lon': float(lon),
+                'nombre': name,
+                'fecha': f"{date_start} al {date_end}" if date_start != date_end else date_start
+            }
 
 if __name__ == "__main__":
     wcaid = "2016LOPE37"
-    prs = prs_info(wcaid)
-    pr_mas_antiguo, pr_mas_reciente = oldest_and_newest_pr(wcaid)
-    print("Oldest PR:", pr_mas_antiguo)
-    print("Newest PR:", pr_mas_reciente)
+
 
 
 
