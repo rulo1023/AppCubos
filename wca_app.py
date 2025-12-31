@@ -9,38 +9,19 @@ import pydeck as pdk
 # --- 1. CONFIGURACIÓN INICIAL ---
 st.set_page_config(page_title="MyCubing Dashboard", layout="wide", page_icon="🎲")
 
-# --- ESTILOS CSS (Mantenemos los tuyos) ---
+# --- ESTILOS CSS ---
 st.markdown("""
     <style>
-    /* Estilo para el valor de las métricas */
     [data-testid="stMetricValue"] { font-size: 24px; font-weight: bold; }
-    
-    /* Estilo para los contenedores (las "tarjetas" grises) */
     [data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 15px;
         background-color: #f8f9fa;
         padding: 15px;
         margin-bottom: 10px;
     }
-    
-    /* Títulos de las tarjetas de PR */
-    .pr-card-title {
-        font-size: 14px;
-        color: #666;
-        margin-bottom: 0px;
-    }
-    .pr-card-time {
-        font-size: 26px;
-        font-weight: 800;
-        color: #31333F;
-        margin: 5px 0;
-    }
-    .pr-card-sub {
-        font-size: 12px;
-        color: #888;
-    }
-    
-    /* Ajuste responsive */
+    .pr-card-title { font-size: 14px; color: #666; margin-bottom: 0px; }
+    .pr-card-time { font-size: 26px; font-weight: 800; color: #31333F; margin: 5px 0; }
+    .pr-card-sub { font-size: 12px; color: #888; }
     [data-testid="column"] { min-width: 45% !important; flex: 1 1 45% !important; }
     @media (min-width: 768px) {
         [data-testid="column"] { min-width: 20% !important; flex: 1 1 20% !important; }
@@ -63,7 +44,6 @@ def render_metric(label, value):
         st.metric(label=label, value=value)
 
 def render_pr_card(title, time_str, comp_name, date_str):
-    """Renderiza una tarjeta HTML personalizada para los PRs"""
     with st.container(border=True):
         st.markdown(f"""
         <div class="pr-card-title">{title}</div>
@@ -73,16 +53,18 @@ def render_pr_card(title, time_str, comp_name, date_str):
         """, unsafe_allow_html=True)
 
 # --- 3. CARGA DE DATOS ---
-@st.cache_data(ttl=3600, show_spinner=False)  # <-- Añadimos show_spinner=False aquí
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_all_data(wca_id):
     try:
-        # El resto del código se queda igual...
-        info = fn.get_wcaid_info(wca_id)
         results = fn.get_wca_results(wca_id)
-        prs_dict = fn.prs_info(wca_id)
-        stats_prs = fn.number_of_prs(wca_id)
-        oldest, newest = fn.oldest_and_newest_pr(wca_id)
-        map_data = list(fn.generate_map_data(wca_id))
+        if results.empty: return None
+
+        info = fn.get_wcaid_info(wca_id)
+        prs_dict = fn.prs_info(wca_id, results_df=results)
+        stats_prs = fn.number_of_prs(wca_id, results_df=results)
+        oldest, newest = fn.oldest_and_newest_pr(wca_id, prs_data=prs_dict)
+        map_data = list(fn.generate_map_data(wca_id, results_df=results))
+        
         return {
             "info": info,
             "results": results,
@@ -93,7 +75,7 @@ def load_all_data(wca_id):
             "map_data": map_data
         }
     except Exception as e:
-        st.error(f"No se pudo cargar el perfil: {e}")
+        st.error(f"Error loading profile: {e}")
         return None
 
 # --- 4. VISTAS ---
@@ -103,14 +85,18 @@ def render_summary(data, wca_id):
     iso_code = info.get('person.country.iso2', 'N/A')
     flag = fn.get_flag_emoji(iso_code)
     
-    st.header(f"{flag} {info.get('person.name')}")
+    st.header(f"{flag} {info.get('person.name', wca_id)}")
     st.caption(f"WCA ID: {wca_id}")
     st.divider()
 
     st.subheader("Activity")
     c1, c2 = st.columns(2)
-    with c1: render_metric("🗓️ Competitions", info.get('competition_count', 0))
-    last_comp = data['results']['Competition'].iloc[0] if not data['results'].empty else "N/A"
+    with c1: render_metric("🗓️ Competitions", info.get('competition_count', len(data['results']['Competition'].unique())))
+    
+    last_comp = "N/A"
+    if not data['results'].empty:
+        last_comp = data['results'].iloc[0]['CompName']
+        
     with c2: render_metric("🏟️ Last Comp", last_comp)
 
     st.subheader("Medals")
@@ -119,103 +105,48 @@ def render_summary(data, wca_id):
     with m2: render_metric("🥈 Silver", info.get('medals.silver', 0))
     with m3: render_metric("🥉 Bronze", info.get('medals.bronze', 0))
 
-    # --- MAPA (Original Restaurado) ---
-    st.divider()
-    st.subheader("📍 Competition Map")
-    map_df = pd.DataFrame(data["map_data"])
-    
-    if not map_df.empty:
-        map_df['pos_key'] = map_df['lat'].astype(str) + map_df['lon'].astype(str)
-        metres_in_degrees = 0.000045 
-        
-        def apply_jitter(group):
-            if len(group) > 1:
-                for i in range(len(group)):
-                    angle = 2 * np.pi * i / len(group)
-                    group.iloc[i, group.columns.get_loc('lat')] += metres_in_degrees * np.cos(angle)
-                    group.iloc[i, group.columns.get_loc('lon')] += metres_in_degrees * np.sin(angle)
-            return group
-
-        map_df = map_df.groupby('pos_key', group_keys=False).apply(apply_jitter)
-
-        view_state = pdk.ViewState(
-            latitude=map_df['lat'].mean(), longitude=map_df['lon'].mean(),
-            zoom=3, pitch=0
-        )
-        layer = pdk.Layer(
-            "ScatterplotLayer", map_df,
-            get_position='[lon, lat]', get_color='[255, 75, 75, 200]',
-            radius_min_pixels=5, radius_max_pixels=15,
-            pickable=True, stroked=True,
-            line_width_min_pixels=1, get_line_color=[255, 255, 255]
-        )
-        st.pydeck_chart(pdk.Deck(
-            map_style='https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-            initial_view_state=view_state, layers=[layer],
-            tooltip={"text": "{nombre}\n📅 {fecha}"}
-        ))
 
 def render_personal_bests_cards(data):
     st.header("🏆 Personal Bests")
     df = data["results"].copy()
     if df.empty: return
 
-    # Asegurar formato fecha
-    df['CompDate'] = pd.to_datetime(df['CompDate'])
-    
     # Orden de eventos estándar
     ordered_events = [k for k in event_dict.keys() if k in df['Event'].unique()]
 
     for event_code in ordered_events:
         event_name = event_dict.get(event_code, event_code)
-        
-        # Filtramos datos del evento
         ev_df = df[df['Event'] == event_code]
         
-        # Buscamos la fila del mejor Single
-        # Ordenamos por tiempo (asc) y luego fecha (asc) para coger el primero cronológicamente en caso de empate
+        # Lógica mejorada para encontrar PB
         best_single_row = ev_df[ev_df['best_cs'] > 0].sort_values(by=['best_cs', 'CompDate']).iloc[0] if not ev_df[ev_df['best_cs'] > 0].empty else None
-        
-        # Buscamos la fila de la mejor Media
         best_avg_row = ev_df[ev_df['avg_cs'] > 0].sort_values(by=['avg_cs', 'CompDate']).iloc[0] if not ev_df[ev_df['avg_cs'] > 0].empty else None
 
-        # Si no tiene ni single ni media (raro), saltamos
-        if best_single_row is None and best_avg_row is None:
-            continue
+        if best_single_row is None and best_avg_row is None: continue
 
         st.subheader(event_name)
         c1, c2 = st.columns(2)
 
-        # Tarjeta SINGLE
         with c1:
             if best_single_row is not None:
-                s_time = s_time = fn.format_wca_time(best_single_row['best_cs'], event_code=event_code)
-                s_comp = best_single_row['Competition'] # O CompName si prefieres corto
-                s_date = best_single_row['CompDate'].strftime('%d %b %Y')
-                render_pr_card("SINGLE", s_time, s_comp, s_date)
+                s_time = fn.format_wca_time(best_single_row['best_cs'], event_code=event_code)
+                s_date = best_single_row['CompDate'].strftime('%d %b %Y') if pd.notnull(best_single_row['CompDate']) else "Unknown"
+                render_pr_card("SINGLE", s_time, best_single_row['CompName'], s_date)
             else:
                 st.info("No Single result")
 
-        # Tarjeta AVERAGE
         with c2:
             if best_avg_row is not None:
                 a_time = fn.format_wca_time(best_avg_row['avg_cs'], event_code=event_code)
-                a_comp = best_avg_row['Competition']
-                a_date = best_avg_row['CompDate'].strftime('%d %b %Y')
-                render_pr_card("AVERAGE", a_time, a_comp, a_date)
+                a_date = best_avg_row['CompDate'].strftime('%d %b %Y') if pd.notnull(best_avg_row['CompDate']) else "Unknown"
+                render_pr_card("AVERAGE", a_time, best_avg_row['CompName'], a_date)
             else:
-                # Espacio vacío o mensaje discreto si no hay media (ej. 3x3 Blindfolded antiguo)
                 st.write("") 
 
-def render_competitions(data):
-    st.header("🌍 Competitions History")
-    df = data["results"].copy()
-    if not df.empty:
-        comps = df.groupby(['CompName', 'CompDate', 'Country']).size().reset_index(name='Events')
-        comps = comps.sort_values(by="CompDate", ascending=False)
-        st.dataframe(comps, use_container_width=True, hide_index=True)
-
 def render_statistics(data):
+
+
+
     st.header("📊 Statistics")
     df = data["results"]
     if not df.empty:
@@ -233,94 +164,147 @@ def render_statistics(data):
                 pr_df = pd.DataFrame(list(pr_clean.items()), columns=['Event', 'Count'])
                 pr_df['Event'] = pr_df['Event'].map(event_dict).fillna(pr_df['Event'])
                 st.bar_chart(pr_df.set_index('Event'))
+def render_competitions(data):
+    st.header("🌍 Competitions History")
+
+    # --- B. TABLA ---
+    df = data["results"].copy()
+    if not df.empty:
+        # Agrupamos por competición para no repetir filas por cada ronda
+        comps = df.groupby(['CompName', 'CompDate', 'Country']).size().reset_index(name='Rounds')
+        comps = comps.sort_values(by="CompDate", ascending=False)
+        
+        # Formatear localización y fecha
+        comps['Location'] = comps['Country'].apply(lambda x: f"{fn.get_flag_emoji(x)} {fn.get_country_name(x)}")
+        comps['Date'] = comps['CompDate'].dt.strftime('%Y-%m-%d')
+        
+        st.dataframe(
+            comps[['Date', 'CompName', 'Location']], 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Date": st.column_config.TextColumn("Date", width="small"),
+                "CompName": st.column_config.TextColumn("Competition", width="large"),
+                "Location": st.column_config.TextColumn("Location", width="medium")
+            }
+        )
+
+    st.divider()
+
+    # --- A. MAPA ---
+    map_df = pd.DataFrame(data["map_data"])
+    if not map_df.empty:
+        with st.expander("🗺️ View Map", expanded=True):
+            map_df['pos_key'] = map_df['lat'].astype(str) + map_df['lon'].astype(str)
+            metres_in_degrees = 0.000045 
+            
+            def apply_jitter(group):
+                if len(group) > 1:
+                    for i in range(len(group)):
+                        angle = 2 * np.pi * i / len(group)
+                        group.iloc[i, group.columns.get_loc('lat')] += metres_in_degrees * np.cos(angle)
+                        group.iloc[i, group.columns.get_loc('lon')] += metres_in_degrees * np.sin(angle)
+                return group
+
+            map_df = map_df.groupby('pos_key', group_keys=False).apply(apply_jitter)
+
+            view_state = pdk.ViewState(
+                latitude=map_df['lat'].mean(), longitude=map_df['lon'].mean(),
+                zoom=2, pitch=0
+            )
+            layer = pdk.Layer(
+                "ScatterplotLayer", map_df,
+                get_position='[lon, lat]', get_color='[255, 75, 75, 200]',
+                radius_min_pixels=5, radius_max_pixels=15,
+                pickable=True, stroked=True,
+                line_width_min_pixels=1, get_line_color=[255, 255, 255]
+            )
+            st.pydeck_chart(pdk.Deck(
+                map_style='https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+                initial_view_state=view_state, layers=[layer],
+                tooltip={"text": "{nombre}\n📅 {fecha}"}
+            ))
+    
 
 def render_progression(data):
-    st.header("📈 Progression (PR History)")
+    st.header("📈 Personal Best Progression")
     df = data["results"].copy()
     if df.empty: return
 
-    # Selector
-    opts = {event_dict.get(e, e): e for e in df['Event'].unique()}
-    sel_name = st.selectbox("Select Event:", list(opts.keys()))
+    # Selectores
+    available_events = df['Event'].unique()
+    opts = {event_dict.get(e, e): e for e in available_events}
+    
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        sel_name = st.selectbox("Select Event:", list(opts.keys()))
+    with c2:
+        type_sel = st.selectbox("Type:", ["Single", "Average"])
+
     sel_code = opts[sel_name]
+    col_target = 'best_cs' if type_sel == "Single" else 'avg_cs'
     
-    # Preparar datos
-    dfe = df[(df['Event'] == sel_code) & (df['best_cs'] > 0)].copy()
-    dfe['Date'] = pd.to_datetime(dfe['CompDate'])
-    dfe = dfe.sort_values('Date')
-
-    # AJUSTE PARA FMC
-    if sel_code == "333fm":
-        dfe['Single_Val'] = dfe['best_cs']
-        # La media en FMC se guarda multiplicada por 100 (ej: 33.67 moves es 3367)
-        dfe['Average_Val'] = dfe['avg_cs'] / 100 
-        unit = "moves"
-    else:
-        dfe['Single_Val'] = dfe['best_cs'] / 100
-        dfe['Average_Val'] = dfe['avg_cs'] / 100
-        unit = "seconds"
+    # Filtrar datos válidos
+    dfe = df[(df['Event'] == sel_code) & (df[col_target] > 0) & (df['CompDate'].notnull())].copy()
     
-    # --- Lógica de PRs ---
-    dfe['pr_so_far'] = dfe['best_cs'].cummin()
-    pr_history = dfe[dfe['best_cs'] == dfe['pr_so_far']].drop_duplicates(subset=['best_cs'])
-    
-    # En FMC el PR de la columna Single_Val ya es correcto, en otros se divide
-    pr_history_display = pr_history['Single_Val']
+    if dfe.empty:
+        st.warning(f"No valid {type_sel} results found for this event.")
+        return
 
-    # GRÁFICO (Actualizar yaxis_title)
-    fig = go.Figure()
-    
-    fig.add_trace(go.Scatter(
-        x=pr_history['Date'], 
-        y=pr_history_display,
-        mode='lines+markers',
-        name=f'PR ({unit})',
-        line=dict(color='firebrick', width=3, shape='hv'),
-        marker=dict(size=8)
-    ))
+    dfe = dfe.sort_values(by='CompDate', ascending=True)
 
-    # --- LOGICA Media Móvil (Trend) ---
-    # Usamos todos los datos (dfe) para la media móvil
-    # Window = 5 competiciones (ajustable)
-    dfe['MA_5'] = dfe['Single'].rolling(window=5, min_periods=1).mean()
+    is_fmc = sel_code == "333fm"
+    divisor = 1 if (is_fmc and type_sel == "Single") else 100
+    unit = "moves" if is_fmc else "seconds"
 
-    # GRÁFICO
+    # Lógica de PB acumulado
+    dfe['pr_so_far'] = dfe[col_target].cummin()
+    pr_history = dfe[dfe[col_target] == dfe['pr_so_far']].drop_duplicates(subset=[col_target], keep='first')
+
     fig = go.Figure()
 
-    # 1. Línea de PRs (Escalonada)
+    # 1. Línea de PB
     fig.add_trace(go.Scatter(
-        x=pr_history['Date'], 
-        y=pr_history['Single_Sec'],
+        x=pr_history['CompDate'], 
+        y=pr_history[col_target] / divisor,
         mode='lines+markers',
-        name='Personal Record (PR)',
-        line=dict(color='firebrick', width=3, shape='hv'), # 'hv' hace el efecto escalón
-        marker=dict(size=8)
+        name=f'PB {type_sel}',
+        line=dict(color='#FF4B4B', width=3, shape='hv'),
+        marker=dict(size=8, color='#FF4B4B')
     ))
 
-    # 2. Línea de Tendencia (Media Móvil)
+    # 2. Todos los resultados
     fig.add_trace(go.Scatter(
-        x=dfe['Date'],
-        y=dfe['MA_5'],
+        x=dfe['CompDate'],
+        y=dfe[col_target] / divisor,
+        mode='markers',
+        name='All Results',
+        marker=dict(size=4, color='rgba(0,0,0,0.1)'),
+        hoverinfo='skip'
+    ))
+
+    # 3. Media Móvil (MA5)
+    dfe['MA_5'] = dfe[col_target].rolling(window=5, min_periods=1).mean()
+    fig.add_trace(go.Scatter(
+        x=dfe['CompDate'],
+        y=dfe['MA_5'] / divisor,
         mode='lines',
-        name='Moving Avg (5 comps)',
-        line=dict(color='royalblue', width=2, dash='dot'),
-        opacity=0.7
+        name='Avg (Last 5)',
+        line=dict(color='rgba(100, 100, 100, 0.4)', width=2, dash='dot')
     ))
 
-    # Average si existe (Opcional: Agregar lógica similar para Avg PRs)
-    
     fig.update_layout(
-        title=f"Evolution of {sel_name}",
+        title=f"Evolution of {sel_name} ({type_sel})",
         xaxis_title="Date",
         yaxis_title=unit,
         hovermode="x unified",
+        plot_bgcolor='rgba(0,0,0,0)',
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     
     st.plotly_chart(fig, use_container_width=True)
-    st.caption("🔴 Red line: The moments you broke your PR. | 🔵 Blue dotted line: Your average performance (Moving Avg of last 5 comps).")
-
-
+    st.caption(f"🔴 Red line: Your {type_sel} personal record history. ⚫ Grey dots: All official results.")
+    
 # --- 5. LAYOUT PRINCIPAL ---
 
 st.sidebar.title("🎲 MyCubing")
@@ -328,8 +312,8 @@ wca_id_input = st.sidebar.text_input("WCA ID", placeholder="2016LOPE37").upper()
 selection = st.sidebar.radio("Go to:", ["Summary", "Personal Bests", "Competitions", "Statistics", "Progression"])
 
 if wca_id_input:
-    # Este spinner manual es el único que verá el usuario
-    with st.spinner("Loading WCA profile and results. This might take some time, you've done too many solves!"):
+    # Spinner informativo
+    with st.spinner(f"Fetching data for {wca_id_input}... (This runs faster after the first load)"):
         data = load_all_data(wca_id_input)
 
     if data:
@@ -339,7 +323,10 @@ if wca_id_input:
         elif selection == "Statistics": render_statistics(data)
         elif selection == "Progression": render_progression(data)
         
-        st.sidebar.success(f"User: {data['info'].get('person.name')}")
+        name = data['info'].get('person.name', wca_id_input)
+        st.sidebar.success(f"Loaded: {name}")
+    else:
+        st.sidebar.error("Profile not found or API error.")
 else:
     st.title("🎲 Welcome to MyCubing")
     st.markdown("Enter your **WCA ID** in the sidebar to see your advanced stats.")

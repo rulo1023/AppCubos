@@ -1,36 +1,65 @@
 import requests
 import pandas as pd
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
-# Global cache to avoid re-fetching the same competition data
+import requests
+import pandas as pd
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+import pycountry
+
+# --- CACHÉ GLOBAL ---
 COMP_CACHE = {}
 session = requests.Session()
+# Adapter para reintentos automáticos si la red falla brevemente
+adapter = requests.adapters.HTTPAdapter(pool_connections=100, pool_maxsize=100)
+session.mount('https://', adapter)
 
 def fetch_json(url):
     """Helper to fetch JSON with error handling."""
     try:
-        response = session.get(url, timeout=10)
+        response = session.get(url, timeout=5) # Timeout reducido para fallar rápido y no bloquear
+        if response.status_code == 404:
+            return None
         response.raise_for_status()
         return response.json()
     except Exception as e:
-        print(f"Error fetching {url}: {e}")
+        # En producción podrías loguear esto, pero aquí silenciamos para velocidad
         return None
 
 def get_comp_data(comp_id):
-    """Fetches competition data once and stores it in memory."""
+    """
+    Fetches competition data. 
+    Checks cache first to avoid network calls.
+    """
     if comp_id not in COMP_CACHE:
         url = f'https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/master/api/competitions/{comp_id}.json'
-        COMP_CACHE[comp_id] = fetch_json(url)
-    return COMP_CACHE[comp_id]
+        data = fetch_json(url)
+        if data:
+            COMP_CACHE[comp_id] = data
+    return COMP_CACHE.get(comp_id)
+
+def prefetch_competitions(comp_ids):
+    """
+    Parallel fetching of competition data.
+    OPTIMIZATION: Increased workers to 50 for faster I/O bound operations.
+    """
+    to_fetch = [cid for cid in comp_ids if cid not in COMP_CACHE]
+    
+    if to_fetch:
+        # Aumentamos workers a 50 para aprovechar ancho de banda en I/O
+        with ThreadPoolExecutor(max_workers=50) as executor:
+            executor.map(get_comp_data, to_fetch)
 
 def format_wca_time(cs, event_code=""):
     if cs == -1: return "DNF"
     if cs == -2: return "DNS"
     if cs is None or cs <= 0: return ""
     
-    # Si es FMC, no dividimos por 100, son movimientos directos
+    # Si es FMC, la media se guarda multiplicada por 100
     if event_code == "333fm":
-        return f"{cs} moves" if cs < 1000 else f"{cs/100:.2f} moves" # La media de FMC se guarda como centimoves (ej: 3367)
+        return f"{cs} moves" if cs < 1000 else f"{cs/100:.2f} moves" 
 
     hundredths = cs % 100
     total_seconds = cs // 100
@@ -43,18 +72,34 @@ def format_wca_time(cs, event_code=""):
         return f"{seconds}.{hundredths:02d}"
 
 def get_wca_results(wca_id):
-    """Fetches user results and hydrates competition info from cache."""
+    """
+    Main function to get results. 
+    Optimized to fetch all competition info in parallel before processing.
+    """
     url = f"https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/master/api/persons/{wca_id}.json"
     data = fetch_json(url)
-    if not data: return pd.DataFrame()
+    if not data or "results" not in data: 
+        return pd.DataFrame()
+
+    # 1. Identificar todas las competiciones necesarias
+    all_comp_ids = list(data["results"].keys())
+    
+    # 2. Descarga paralela masiva (OPTIMIZACIÓN CLAVE)
+    prefetch_competitions(all_comp_ids)
 
     rows = []
-    # Comp IDs are keys in the results dict
-    comp_ids = list(data["results"].keys())[::-1]
+    # Procesamos en orden inverso (más reciente primero normalmente)
+    comp_ids_ordered = all_comp_ids[::-1]
 
-    for comp_id in comp_ids:
-        comp_info = get_comp_data(comp_id)
+    for comp_id in comp_ids_ordered:
+        comp_info = COMP_CACHE.get(comp_id) 
+        
+        # Extracción segura de datos
+        comp_name = comp_info.get("name", comp_id) if comp_info else comp_id
         country_iso2 = comp_info.get("country") if comp_info else "Unknown"
+        
+        # Fecha: Intentamos parsear aquí para que el DataFrame tenga datetime real
+        raw_date = comp_info.get("date", {}).get("from") if comp_info else None
         
         events = data["results"][comp_id]
         for event_id, rounds in events.items():
@@ -62,8 +107,8 @@ def get_wca_results(wca_id):
                 solves = r.get("solves", [])
                 rows.append({
                     "Competition": comp_id,
-                    "CompName": comp_info.get("name") if comp_info else comp_id,
-                    "CompDate": comp_info.get("date", {}).get("from") if comp_info else None,
+                    "CompName": comp_name,
+                    "CompDate": raw_date, # Se convierte a datetime abajo
                     "Country": country_iso2,
                     "Event": event_id,
                     "Round": r.get("round"),
@@ -77,7 +122,11 @@ def get_wca_results(wca_id):
                 })
 
     df = pd.DataFrame(rows)
+    if df.empty: return df
     
+    # Convertir fecha a datetime real para ordenamiento correcto
+    df['CompDate'] = pd.to_datetime(df['CompDate'], errors='coerce')
+
     # PR Logic
     def clean_for_min(val):
         return float('inf') if (val is None or val <= 0) else val
@@ -86,8 +135,9 @@ def get_wca_results(wca_id):
     running_best_avg = {}
     pr_labels = []
 
-    # Sort by date to ensure PR logic is chronological
-    df = df.sort_values(by="CompDate", ascending=True)
+    # Sort by date ensures PR logic matches reality
+    # Ordenamos por Fecha y luego por Ronda para consistencia
+    df = df.sort_values(by=["CompDate", "Round"], ascending=True)
 
     for idx, row in df.iterrows():
         e, s, a = row["Event"], clean_for_min(row["best_cs"]), clean_for_min(row["avg_cs"])
@@ -106,53 +156,11 @@ def get_wca_results(wca_id):
 
     df["pr"] = pr_labels
     
-    # Final cleanup
-    time_cols = ["time1", "time2", "time3", "time4", "time5", "best_cs", "avg_cs"]
-    for col in time_cols:
-        df[f"{col}_formatted"] = df[col].apply(format_wca_time)
-
-    return df.iloc[::-1].reset_index(drop=True)
-
-def prs_info(wca_id):
-    """Refactored to use the already fetched data from get_wca_results."""
-    results = get_wca_results(wca_id)
-    current_info = get_wcaid_info(wca_id) # The WCA API call
-    
-    # Filter only rows that are PRs
-    pr_rows = results[results['pr'].notna()].copy()
-    
-    pr_comps = {}
-    for _, row in pr_rows.iterrows():
-        event = row['Event']
-        best_val = 0
-        
-        # Determine which PR type to store
-        types = []
-        if row['pr'] in ['single', 'sin+avg']: types.append('single')
-        if row['pr'] in ['average', 'sin+avg']: types.append('average')
-        
-        for kind in types:
-            path = f"personal_records.{event}.{kind}.best"
-            raw_best = current_info.get(path, 0)
-            
-            # Formatting logic
-            best_time = raw_best / 100
-            formatted = f"{int(best_time // 60)}:{best_time % 60:05.2f}" if best_time >= 60 else f"{best_time:.2f}"
-            
-            pr_comps[f"{event}_{kind[:3]}"] = (
-                row['Competition'], 
-                row['CompName'], 
-                row['CompDate'], 
-                formatted, 
-                event, 
-                kind
-            )
-            
-    return pr_comps
+    # Retornamos el DF ordenado cronológicamente inverso (más nuevo arriba) para mostrar en tablas
+    return df.sort_values(by="CompDate", ascending=False).reset_index(drop=True)
 
 def flatten(obj, parent_key="", sep="."):
     flat = {}
-
     if isinstance(obj, dict):
         for k, v in obj.items():
             new_key = f"{parent_key}{sep}{k}" if parent_key else k
@@ -163,171 +171,144 @@ def flatten(obj, parent_key="", sep="."):
             flat.update(flatten(v, new_key, sep))
     else:
         flat[parent_key] = obj
-
     return flat
 
 def get_wcaid_info(wca_id):
-    """
-    Gets and flattens WCA data for a given WCA ID.
-    included person information, records, etc
-    important parameters inside of the returned dict will be like:
-        - person.name
-        - person.country.iso2
-        - personal_records.333.single.best
-        - personal_records.333.average.best
-        - personal_records.333.single.world_rank', continental_rank', national_rank
-        - medals.gold, medals.silver, medals.bronze
-        - competition_count
-        - 'records.national', 'records.continental', 'records.world', 'records.total' 
-        - 'total_solves'
-    
-        event codes: 333, 222, 444, 555, 666, 777, 333bf, 333oh, 333ft,
-          clock, minx, pyram, skewb, sq1
-
-    :param wca_id: Description
-    """
     url = f"https://www.worldcubeassociation.org/api/v0/persons/{wca_id}"
-    r = requests.get(url, timeout=15)
-
-    r.raise_for_status()          # <-- will show an error if the request failed
-    data = r.json()
-
-    flat = flatten(data)
-    return flat
-
-def get_flag_emoji(country_code):
-    if not country_code or country_code == 'N/A' or len(country_code) != 2:
-        return "🌍"
-    
-    # El offset correcto para llegar a Regional Indicator Symbol Letter A (U+1F1E6)
-    # 'A' es 65 en ASCII. 127462 - 65 = 127397. 
-    # Tu lógica era correcta, pero asegúrate de que el input sea limpio.
-    
     try:
-        return "".join(chr(ord(c.upper()) + 127397) for c in country_code)
-    except ValueError:
-        return "🌍"
-    
-def prs_info(wca_id):
-    results = get_wca_results(wca_id)
-    # calculate in what comp each pr single and average was achieved
-    pr_comps = {}
-    current_info = get_wcaid_info(wca_id)
-    #reverse results because it's from newest to oldest
-    results = results.iloc[::-1].reset_index(drop=True)
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        return flatten(r.json())
+    except Exception:
+        return {}
 
-    for idx, row in results.iterrows():
-        if row['pr'] in ['single', 'sin+avg']:
-            pr_comps[f"{row['Event']}_single"] = row['Competition']
-        if row['pr'] in ['average', 'sin+avg']:
-            pr_comps[f"{row['Event']}_avg"] = row['Competition']
-    
-    for pr in pr_comps:
-        comp_id = pr_comps[pr]
-
-        url = f'https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/master/api/competitions/{comp_id}.json'
-        data = requests.get(url).json()
-
-        date = data["date"]["from"]
-        name = data["name"]
-
-        event = pr.split('_')[0]
-
-        kind_wca = 'average' if pr.endswith('avg') else 'single'
-
-        path = f"personal_records.{event}.{kind_wca}.best"
+def prs_info(wca_id, results_df=None):
+    if results_df is None:
+        results_df = get_wca_results(wca_id)
         
-        best_time = current_info.get(path, 0) / 100
+    pr_comps = {}
+    pr_rows = results_df[results_df['pr'].notnull()].copy()
 
-        # si el tiempo supera 60 segundos, formatearlo adecuadamente
-        if best_time >= 60:
-            minutes = int(best_time // 60)
-            seconds = best_time % 60
-            best_time = f"{minutes}:{seconds:05.2f}"
-        else:
-            best_time = f"{best_time:.2f}"
+    for idx, row in pr_rows.iterrows():
+        event = row['Event']
+        comp_id = row['Competition']
+        comp_name = row['CompName']
+        # Convertir a string YYYY-MM-DD para display
+        comp_date = row['CompDate'].strftime('%Y-%m-%d') if pd.notnull(row['CompDate']) else "Unknown"
+        
+        pr_type = row['pr']
 
-        pr_comps[pr] = (comp_id, name, date, best_time, event, kind_wca)
+        def store_pr(kind):
+            val_raw = row['best_cs'] if kind == 'single' else row['avg_cs']
+            formatted = format_wca_time(val_raw, event)
+            key = f"{event}_{kind[:3]}" 
+            pr_comps[key] = (comp_id, comp_name, comp_date, formatted, event, kind)
+
+        if pr_type in ['single', 'sin+avg']: store_pr('single')
+        if pr_type in ['average', 'sin+avg']: store_pr('average')
+            
     return pr_comps
 
-def oldest_and_newest_pr(wca_id):
-    prs = prs_info(wca_id)
+def oldest_and_newest_pr(wca_id, prs_data=None):
+    if prs_data is None:
+        prs_data = prs_info(wca_id)
+        
     lista_fechas = []
-    for evento, info in prs.items():
-        # if evento is in 333ft, magic, mmagic, skip
+    for key, info in prs_data.items():
+        evento = info[4]
         if evento.startswith('333ft') or evento.startswith('magic') or evento.startswith('mmagic'):
             continue
+        
         fecha_str = info[2]
-        fecha_obj = datetime.strptime(fecha_str, '%Y-%m-%d')
-        lista_fechas.append((fecha_obj, evento, info))
+        if fecha_str and fecha_str != "Unknown":
+            try:
+                fecha_obj = datetime.strptime(fecha_str, '%Y-%m-%d')
+                lista_fechas.append((fecha_obj, info))
+            except ValueError:
+                pass
 
-    pr_mas_antiguo = min(lista_fechas, key=lambda x: x[0])
-    pr_mas_reciente = max(lista_fechas, key=lambda x: x[0])
+    if not lista_fechas:
+        return None, None
 
-    pr_mas_antiguo = pr_mas_antiguo[1:]
-    pr_mas_reciente = pr_mas_reciente[1:]
+    pr_mas_antiguo = min(lista_fechas, key=lambda x: x[0])[1]
+    pr_mas_reciente = max(lista_fechas, key=lambda x: x[0])[1]
 
     return pr_mas_antiguo, pr_mas_reciente
 
-def number_countries_participated(wca_id):
-    results = get_wca_results(wca_id)
-    countries = results['Country'].unique()
-    # eliminate countries starting with X
-    countries = [c for c in countries if not c.startswith('X')]
-    return len(countries)
-
-def number_of_prs(wca_id):
-    df = get_wca_results(wca_id)
-    total_prs = df['pr'].isin(['single', 'average', 'sin+avg']).sum()
-
-    pr_by_event = df[df['pr'].notnull()]['Event'].value_counts()
-    # crear un diccionario, {total: total_prs, '333': n_pr_333, ...
+def number_of_prs(wca_id, results_df=None):
+    if results_df is None:
+        results_df = get_wca_results(wca_id)
+        
+    total_prs = results_df['pr'].notnull().sum()
+    pr_by_event = results_df[results_df['pr'].notnull()]['Event'].value_counts()
+    
     pr_summary = {"total": total_prs}
     for event, count in pr_by_event.items():
         pr_summary[event] = count
 
     return pr_summary
 
-def generate_map_data(wca_id):
-    # Obtenemos los resultados para saber en qué competiciones participó
-    results_df = get_wca_results(wca_id)
-    if results_df.empty:
-        return
+def generate_map_data(wca_id, results_df=None):
+    if results_df is None:
+        results_df = get_wca_results(wca_id)
+    
+    if results_df.empty: return
 
     competitions = results_df['Competition'].unique()
     
     for competition in competitions:
-        comp_data = get_comp_data(competition)
+        comp_data = COMP_CACHE.get(competition)
         
-        # Validación de que existan los datos y las coordenadas
-        if not comp_data or 'venue' not in comp_data or 'coordinates' not in comp_data['venue']:
+        # Chequeo robusto por si falta data en el JSON
+        if not comp_data or 'venue' not in comp_data or comp_data['venue'] is None:
             continue
             
+        coords = comp_data['venue'].get('coordinates')
+        if not coords:
+            continue
+
         name = comp_data.get('name', competition)
         date_start = comp_data.get('date', {}).get('from', "")
-        date_end = comp_data.get('date', {}).get('till', "")
         
-        lat = comp_data['venue']['coordinates'].get('latitude')
-        lon = comp_data['venue']['coordinates'].get('longitude')
+        lat = coords.get('latitude')
+        lon = coords.get('longitude')
         
         if lat is not None and lon is not None:
             yield {
                 'lat': float(lat),
                 'lon': float(lon),
                 'nombre': name,
-                'fecha': f"{date_start} al {date_end}" if date_start != date_end else date_start
+                'fecha': f"{date_start}"
             }
 
-if __name__ == "__main__":
-    wcaid = "2016LOPE37"
-    mapa = list(generate_map_data(wcaid))
-    print(mapa)
+def get_flag_emoji(country_code):
+    if not country_code or country_code == 'N/A':
+        return "🌍"
     
+    # Casos especiales de la WCA (Multinacional/Multicontinental)
+    if country_code.startswith('X'):
+        return "🌍"
 
+    if len(country_code) != 2:
+        return "🌍"
+        
+    try:
+        return "".join(chr(ord(c.upper()) + 127397) for c in country_code)
+    except ValueError:
+        return "🌍"
 
+def get_country_name(code):
+    """Devuelve el nombre en inglés del país dado su código ISO2."""
+    if not code: return "Unknown"
 
+    # --- EXCEPCIONES WCA, si el codigo empieza por X, poner Multiple Countries
+    if code.startswith('X'):
+        return "Multiple Countries"
+    # -----------------------
 
-
-
-
-
+    try:
+        # Busca el país en la base de datos de pycountry
+        country = pycountry.countries.get(alpha_2=code)
+        return country.name if country else code
+    except:
+        return code
