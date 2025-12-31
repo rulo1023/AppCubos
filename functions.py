@@ -23,17 +23,24 @@ def get_comp_data(comp_id):
         COMP_CACHE[comp_id] = fetch_json(url)
     return COMP_CACHE[comp_id]
 
-def format_wca_time(cs):
+def format_wca_time(cs, event_code=""):
     if cs == -1: return "DNF"
     if cs == -2: return "DNS"
     if cs is None or cs <= 0: return ""
+    
+    # Si es FMC, no dividimos por 100, son movimientos directos
+    if event_code == "333fm":
+        return f"{cs} moves" if cs < 1000 else f"{cs/100:.2f} moves" # La media de FMC se guarda como centimoves (ej: 3367)
+
     hundredths = cs % 100
     total_seconds = cs // 100
     seconds = total_seconds % 60
     minutes = total_seconds // 60
+    
     if minutes > 0:
         return f"{minutes}:{seconds:02d}.{hundredths:02d}"
-    return f"{seconds}.{hundredths:02d}"
+    else:
+        return f"{seconds}.{hundredths:02d}"
 
 def get_wca_results(wca_id):
     """Fetches user results and hydrates competition info from cache."""
