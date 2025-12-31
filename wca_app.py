@@ -184,6 +184,53 @@ def render_statistics(data):
                 pr_df['Event'] = pr_df['Event'].map(event_dict).fillna(pr_df['Event'])
                 st.bar_chart(pr_df.set_index('Event'))
 
+def render_activity_heatmap(data):
+    st.header("🗓️ Competition Heatmap")
+    df = data["results"]
+    if df.empty:
+        st.warning("No data available for heatmap.")
+        return
+
+    # Usamos la función de ayuda para preparar datos
+    heatmap_data = fn.get_heatmap_data(df)
+    
+    # Crear una matriz completa (años x meses) para que no falten huecos
+    years = sorted(heatmap_data['Year'].unique())
+    months = list(range(1, 13))
+    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    
+    # Pivotar los datos
+    pivot_df = heatmap_data.pivot(index='Year', columns='Month', values='Count').fillna(0)
+    
+    # Asegurar que todos los meses están presentes
+    for m in months:
+        if m not in pivot_df.columns:
+            pivot_df[m] = 0
+    pivot_df = pivot_df[months] # Reordenar columnas
+
+    # Crear el gráfico con Plotly
+    fig = go.Figure(data=go.Heatmap(
+        z=pivot_df.values,
+        x=month_names,
+        y=pivot_df.index,
+        colorscale='Reds',
+        xgap=3, ygap=3,
+        hovertemplate='Year: %{y}<br>Month: %{x}<br>Competitions: %{z}<extra></extra>'
+    ))
+
+    fig.update_layout(
+        title="Competitions per Month/Year",
+        xaxis_nticks=12,
+        yaxis_type='category', # Para que trate los años como etiquetas
+        plot_bgcolor='rgba(0,0,0,0)',
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Tip adicional: Mostrar racha o año más activo
+    max_year = heatmap_data.groupby('Year')['Count'].sum().idxmax()
+    st.info(f"💡 Your most active year was **{max_year}**.")
+
 def render_competitions(data):
     st.header("🌍 Competitions History")
 
@@ -323,11 +370,22 @@ def render_progression(data):
     
     st.plotly_chart(fig, use_container_width=True)
     st.caption(f"🔴 Red line: Your {type_sel} personal record history. ⚫ Grey dots: All official results.")
+
+
 # --- 5. LAYOUT PRINCIPAL ---
+
+
 
 st.sidebar.title("🎲 MyCubing")
 wca_id_input = st.sidebar.text_input("WCA ID", placeholder="2016LOPE37").upper().strip()
-selection = st.sidebar.radio("Go to:", ["Summary", "Personal Bests", "Competitions", "Statistics", "Progression"])
+selection = st.sidebar.radio("Go to:", [
+    "Summary", 
+    "Personal Bests", 
+    "Competitions", 
+    "Activity Heatmap", # <-- Nueva opción
+    "Statistics", 
+    "Progression"
+])
 
 if wca_id_input:
     # Spinner informativo
@@ -338,6 +396,7 @@ if wca_id_input:
         if selection == "Summary": render_summary(data, wca_id_input)
         elif selection == "Personal Bests": render_personal_bests_cards(data)
         elif selection == "Competitions": render_competitions(data)
+        elif selection == "Competition Heatmap": render_activity_heatmap(data)
         elif selection == "Statistics": render_statistics(data)
         elif selection == "Progression": render_progression(data)
         

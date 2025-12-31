@@ -312,3 +312,20 @@ def get_country_name(code):
         return country.name if country else code
     except:
         return code
+    
+
+def get_heatmap_data(results_df):
+    """Prepara los datos para el heatmap de actividad anual/mensual."""
+    if results_df.empty:
+        return pd.DataFrame()
+    
+    # Agrupar por competición única para no contar rondas individuales
+    df_unique_comps = results_df.drop_duplicates(subset=['Competition']).copy()
+    
+    # Extraer año y mes
+    df_unique_comps['Year'] = df_unique_comps['CompDate'].dt.year
+    df_unique_comps['Month'] = df_unique_comps['CompDate'].dt.month
+    
+    # Contar competiciones por mes/año
+    heatmap_df = df_unique_comps.groupby(['Year', 'Month']).size().reset_index(name='Count')
+    return heatmap_df
