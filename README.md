@@ -1,0 +1,1 @@
+[mycubing.streamlit.app]
