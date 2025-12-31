@@ -21,12 +21,26 @@ st.markdown("""
     }
     .pr-card-title { font-size: 14px; color: #666; margin-bottom: 0px; }
     .pr-card-time { font-size: 26px; font-weight: 800; color: #31333F; margin: 5px 0; }
-    .pr-card-sub { font-size: 12px; color: #888; }
+    
+    /* Clase para el nombre de la competición con espacio extra debajo */
+    .pr-card-comp { 
+        font-size: 12px; 
+        color: #888; 
+        margin-bottom: 12px; /* Aquí controlas el "aire" o espacio vacío */
+        line-height: 1.2;
+    }
+    
+    /* Clase para la fecha */
+    .pr-card-date { 
+        font-size: 11px; 
+        color: #aaa; 
+        font-style: italic;
+    }
+
     [data-testid="column"] { min-width: 45% !important; flex: 1 1 45% !important; }
     @media (min-width: 768px) {
         [data-testid="column"] { min-width: 20% !important; flex: 1 1 20% !important; }
     }
-    .stDataFrame { width: 100%; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -105,7 +119,6 @@ def render_summary(data, wca_id):
     with m2: render_metric("🥈 Silver", info.get('medals.silver', 0))
     with m3: render_metric("🥉 Bronze", info.get('medals.bronze', 0))
 
-
 def render_personal_bests_cards(data):
     st.header("🏆 Personal Bests")
     df = data["results"].copy()
@@ -164,6 +177,7 @@ def render_statistics(data):
                 pr_df = pd.DataFrame(list(pr_clean.items()), columns=['Event', 'Count'])
                 pr_df['Event'] = pr_df['Event'].map(event_dict).fillna(pr_df['Event'])
                 st.bar_chart(pr_df.set_index('Event'))
+
 def render_competitions(data):
     st.header("🌍 Competitions History")
 
@@ -225,7 +239,6 @@ def render_competitions(data):
                 tooltip={"text": "{nombre}\n📅 {fecha}"}
             ))
     
-
 def render_progression(data):
     st.header("📈 Personal Best Progression")
     df = data["results"].copy()
@@ -304,7 +317,6 @@ def render_progression(data):
     
     st.plotly_chart(fig, use_container_width=True)
     st.caption(f"🔴 Red line: Your {type_sel} personal record history. ⚫ Grey dots: All official results.")
-    
 # --- 5. LAYOUT PRINCIPAL ---
 
 st.sidebar.title("🎲 MyCubing")
