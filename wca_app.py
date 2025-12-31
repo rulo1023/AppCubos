@@ -11,45 +11,54 @@ st.set_page_config(page_title="MyCubing Dashboard", layout="wide", page_icon="�
 
 # --- ESTILOS CSS ---
 st.markdown("""
+
     <style>
+
     [data-testid="stMetricValue"] { font-size: 24px; font-weight: bold; }
+
     [data-testid="stVerticalBlockBorderWrapper"] {
+
         border-radius: 15px;
+
         background-color: #f8f9fa;
+
         padding: 15px;
+
         margin-bottom: 10px;
-    }
-    .pr-card-title { font-size: 14px; color: #666; margin-bottom: 0px; }
-    .pr-card-time { font-size: 26px; font-weight: 800; color: #31333F; margin: 5px 0; }
-    
-    /* Clase para el nombre de la competición con espacio extra debajo */
-    .pr-card-comp { 
-        font-size: 12px; 
-        color: #888; 
-        margin-bottom: 12px; /* Aquí controlas el "aire" o espacio vacío */
-        line-height: 1.2;
-    }
-    
-    /* Clase para la fecha */
-    .pr-card-date { 
-        font-size: 11px; 
-        color: #aaa; 
-        font-style: italic;
+
     }
 
+    .pr-card-title { font-size: 14px; color: #666; margin-bottom: 0px; }
+
+    .pr-card-time { font-size: 26px; font-weight: 800; color: #31333F; margin: 5px 0; }
+
+    .pr-card-sub { font-size: 12px; color: #888; }
+
     [data-testid="column"] { min-width: 45% !important; flex: 1 1 45% !important; }
+
     @media (min-width: 768px) {
+
         [data-testid="column"] { min-width: 20% !important; flex: 1 1 20% !important; }
+
     }
+
+    .stDataFrame { width: 100%; }
+
+    /* --- ESTO ELIMINA LA MARCA DE AGUA --- */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    [data-testid="stToolbar"] {visibility: hidden;}
     </style>
+            
     """, unsafe_allow_html=True)
 
 # Diccionario de Eventos
 event_dict = {
     "333": "3x3x3", "222": "2x2x2", "444": "4x4x4", "555": "5x5x5", "666": "6x6x6", "777": "7x7x7",
-    "333bf": "3x3 BF", "333oh": "3x3 OH", "333fm": "3x3 FMC", "minx": "Megaminx", 
+    "333bf": "3x3x3 Blind", "333oh": "3x3x3 OH", "333fm": "3x3x3 FM", "minx": "Megaminx", 
     "pyram": "Pyraminx", "skewb": "Skewb", "sq1": "Square-1", "clock": "Clock", 
-    "444bf": "4x4 BF", "555bf": "5x5 BF", "333mbf": "3x3 Multi-BF"
+    "444bf": "4x4x4 Blind", "555bf": "5x5x5 Blind", "333mbf": "3x3x3 Multi-Blind"
 }
 
 # --- 2. HELPERS ---
@@ -62,9 +71,9 @@ def render_pr_card(title, time_str, comp_name, date_str):
         st.markdown(f"""
         <div class="pr-card-title">{title}</div>
         <div class="pr-card-time">{time_str}</div>
-        <div class="pr-card-sub">📍 {comp_name}</div>
-        <div class="pr-card-sub">📅 {date_str}</div>
-        """, unsafe_allow_html=True)
+        <div class="pr-card-comp">📍 {comp_name}</div>
+        <div class="pr-card-date">📅 {date_str}</div>
+        <div style="height: 10px;"></div> """, unsafe_allow_html=True)
 
 # --- 3. CARGA DE DATOS ---
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -165,7 +174,7 @@ def render_statistics(data):
     if not df.empty:
         c1, c2 = st.columns(2)
         with c1:
-            st.subheader("Events Breakdown")
+            st.subheader("Round Breakdown")
             event_counts = df['Event'].value_counts().reset_index()
             event_counts.columns = ['Event', 'Count']
             event_counts['Event'] = event_counts['Event'].map(event_dict).fillna(event_counts['Event'])
