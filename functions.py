@@ -313,6 +313,9 @@ def generate_map_data(wca_id):
 
 if __name__ == "__main__":
     wcaid = "2016LOPE37"
+    mapa = list(generate_map_data(wcaid))
+    print(mapa)
+    
 
 
 

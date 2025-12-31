@@ -150,7 +150,7 @@ if wca_id:
         # --- SECCIÓN NUEVA: MAPA ---
        
         st.divider()
-        st.subheader("📍 Mapa de competiciones")
+        st.subheader("📍 Competition map")
 
         # Convertimos el generador en un DataFrame
         with st.spinner("Cargando ubicaciones..."):
@@ -161,11 +161,26 @@ if wca_id:
             import pydeck as pdk
             import numpy as np
 
-            # OPCIONAL: Si hay coordenadas idénticas, las separamos un poquito (Jitter)
-            # Esto evita que los puntos se solapen perfectamente en una misma ciudad
-            map_df['lat'] += np.random.uniform(-0.01, 0.01, size=len(map_df))
-            map_df['lon'] += np.random.uniform(-0.01, 0.01, size=len(map_df))
+            # 1. Identificar posiciones duplicadas
+            # Creamos una clave única por coordenada
+            map_df['pos_key'] = map_df['lat'].astype(str) + map_df['lon'].astype(str)
+            
+            # 2. Aplicar desplazamiento de 5 metros SOLO a los duplicados
+            # 0.000009 grados latitud aprox = 1 metro
+            metres_in_degrees = 0.000045 # 5 metros aprox
+            
+            def apply_jitter(group):
+                if len(group) > 1:
+                    for i in range(len(group)):
+                        # Ángulo aleatorio para dispersar en círculo
+                        angle = 2 * np.pi * i / len(group)
+                        group.iloc[i, group.columns.get_loc('lat')] += metres_in_degrees * np.cos(angle)
+                        group.iloc[i, group.columns.get_loc('lon')] += metres_in_degrees * np.sin(angle)
+                return group
 
+            map_df = map_df.groupby('pos_key', group_keys=False).apply(apply_jitter)
+
+            # --- Configuración del Mapa (Pydeck) ---
             view_state = pdk.ViewState(
                 latitude=map_df['lat'].mean(),
                 longitude=map_df['lon'].mean(),
@@ -178,14 +193,10 @@ if wca_id:
                 map_df,
                 get_position='[lon, lat]',
                 get_color='[255, 75, 75, 200]',
-                # Ajustes de tamaño dinámico:
-                radius_min_pixels=5,  # Tamaño mínimo aunque estés muy lejos
-                radius_max_pixels=15, # Tamaño máximo para que no tapen todo al acercarte
-                get_radius=5000,      # Radio base en metros
+                radius_min_pixels=6, 
+                radius_max_pixels=15,
                 pickable=True,
-                opacity=0.8,
                 stroked=True,
-                filled=True,
                 line_width_min_pixels=1,
                 get_line_color=[255, 255, 255]
             )
@@ -196,7 +207,7 @@ if wca_id:
                 layers=[layer],
                 tooltip={"text": "{nombre}\n📅 {fecha}"}
             ))
-            
+
         else:
             st.info("No se encontraron coordenadas para las competiciones de este usuario.")
             
