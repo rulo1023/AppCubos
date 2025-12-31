@@ -10,31 +10,35 @@ import pydeck as pdk
 st.set_page_config(page_title="MyCubing Dashboard", layout="wide", page_icon="🎲")
 
 # --- ESTILOS CSS ---
+
 st.markdown("""
     <style>
     [data-testid="stMetricValue"] { font-size: 24px; font-weight: bold; }
+    
+    /* Contenedor de la tarjeta con espacio extra al final */
     [data-testid="stVerticalBlockBorderWrapper"] {
         border-radius: 15px;
         background-color: #f8f9fa;
         padding: 15px;
+        padding-bottom: 25px; /* Añade espacio extra antes del borde inferior */
         margin-bottom: 10px;
     }
-    .pr-card-title { font-size: 14px; color: #666; margin-bottom: 0px; }
-    .pr-card-time { font-size: 26px; font-weight: 800; color: #31333F; margin: 5px 0; }
     
-    /* Clase para el nombre de la competición con espacio extra debajo */
+    .pr-card-title { font-size: 18px; color: #777; margin-bottom: 0px; }
+    .pr-card-time { font-size: 26px; font-weight: 800; color: #FF2C2C ; margin: 5px 0; }
+    
     .pr-card-comp { 
-        font-size: 12px; 
-        color: #888; 
-        margin-bottom: 12px; /* Aquí controlas el "aire" o espacio vacío */
+        font-size: 15px; 
+        color: #777; 
         line-height: 1.2;
+        margin-bottom: 5px; 
     }
     
-    /* Clase para la fecha */
+    /* Clase para la fecha con un margen inferior para asegurar el hueco */
     .pr-card-date { 
-        font-size: 11px; 
-        color: #aaa; 
-        font-style: italic;
+        font-size: 15px; 
+        color: #777;
+        margin-bottom: 5px; /* Este es el "espacio vacío" después de la fecha */
     }
 
     [data-testid="column"] { min-width: 45% !important; flex: 1 1 45% !important; }
@@ -43,6 +47,8 @@ st.markdown("""
     }
     </style>
     """, unsafe_allow_html=True)
+
+
 
 # Diccionario de Eventos
 event_dict = {
