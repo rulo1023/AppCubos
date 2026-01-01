@@ -83,7 +83,6 @@ def load_all_data(wca_id):
         info = fn.get_wcaid_info(wca_id)
         prs_dict = fn.prs_info(wca_id, results_df=results)
         stats_prs = fn.number_of_prs(wca_id, results_df=results)
-        oldest, newest = fn.oldest_and_newest_pr(wca_id, prs_data=prs_dict)
         map_data = list(fn.generate_map_data(wca_id, results_df=results))
         
         return {
@@ -91,8 +90,6 @@ def load_all_data(wca_id):
             "results": results,
             "prs_dict": prs_dict,
             "stats_prs": stats_prs,
-            "oldest": oldest,
-            "newest": newest,
             "map_data": map_data
         }
     except Exception as e:
@@ -129,10 +126,15 @@ def render_summary_enhanced(data, wca_id):
     info = data["info"]
     df = data["results"]
     
+    # Preparamos variables de cabecera
     iso_code = info.get('person.country.iso2', 'N/A')
     flag = fn.get_flag_emoji(iso_code)
     
-    # --- 1. CABECERA ---
+    # Recuperamos el diccionario de eventos GLOBAL. 
+    # Si por alguna razón no existe, usamos uno vacío para no romper la app.
+    local_event_dict = globals().get('event_dict', {})
+
+    # --- 2. CABECERA ---
     col_profile, col_empty = st.columns([2, 1])
     with col_profile:
         st.markdown(f"## {flag} {info.get('person.name', wca_id)}")
@@ -140,10 +142,10 @@ def render_summary_enhanced(data, wca_id):
 
     st.divider()
 
-    # --- 2. TARJETAS DE ESTADÍSTICAS GENERALES ---
+    # --- 3. TARJETAS GENERALES ---
     col1, col2, col3 = st.columns(3)
     
-    # Tarjeta 1: Medallas
+    # Medallas
     with col1:
         with st.container(border=True):
             st.markdown("### 🏆 Medals")
@@ -152,18 +154,21 @@ def render_summary_enhanced(data, wca_id):
             mc2.metric("🥈 Silver", info.get('medals.silver', 0))
             mc3.metric("🥉 Bronze", info.get('medals.bronze', 0))
 
-    # Tarjeta 2: Volumen
+    # Volumen
     with col2:
         with st.container(border=True):
             st.markdown("### 📊 Volume")
             vc1, vc2 = st.columns(2)
+            
             total_solves = info.get('total_solves', 0)
             if total_solves == 0 and not df.empty: total_solves = len(df)
+            
             competition_count = info.get('competition_count', len(df['Competition'].unique()))
+            
             vc1.metric("Comps", competition_count)
             vc2.metric("Solves", total_solves)
 
-    # Tarjeta 3: Trayectoria
+    # Trayectoria
     with col3:
         with st.container(border=True):
             st.markdown("### 📅 Career")
@@ -171,15 +176,6 @@ def render_summary_enhanced(data, wca_id):
             date_range_str = "-"
             fav_event_name = "-"
             
-            ORDERED_EVENTS = {
-                "333": "3x3x3 Cube", "222": "2x2x2 Cube", "444": "4x4x4 Cube",
-                "555": "5x5x5 Cube", "666": "6x6x6 Cube", "777": "7x7x7 Cube",
-                "333bf": "3x3x3 Blindfolded", "333fm": "3x3x3 FM", "333oh": "3x3x3 OH",
-                "clock": "Clock", "minx": "Megaminx", "pyram": "Pyraminx",
-                "skewb": "Skewb", "sq1": "Square-1", "444bf": "4x4x4 Blindfolded",
-                "555bf": "5x5x5 Blindfolded", "333mbf": "3x3x3 Multi-Blind"
-            }
-
             if not df.empty:
                 min_date = df['CompDate'].min()
                 max_date = df['CompDate'].max()
@@ -187,41 +183,101 @@ def render_summary_enhanced(data, wca_id):
                 date_range_str = f"{min_date.strftime('%b %Y')} - {max_date.strftime('%b %Y')}"
                 
                 fav_event_code = df['Event'].value_counts().idxmax()
-                fav_event_name = ORDERED_EVENTS[fav_event_code]
+                # Usamos el diccionario local seguro
+                fav_event_name = local_event_dict.get(fav_event_code, fav_event_code)
 
             cc1, cc2 = st.columns(2)
-            cc1.metric("Years", years_active)
-            cc2.metric("Fav Event", fav_event_name)
+            cc1.metric("Years active", years_active)
+            cc2.metric("Most solved event", fav_event_name)
             st.caption(f"📅 {date_range_str}")
 
-    # --- 3. NUEVAS TARJETAS DE RÉCORDS (Simplificado usando info) ---
-
+    # --- 4. TARJETAS DE RÉCORDS (NR/CR/WR) ---
     nr = info.get('records.national', 0)
     cr = info.get('records.continental', 0)
     wr = info.get('records.world', 0)
     
-    # Solo mostramos si hay algún récord
     if (nr + cr + wr) > 0:
         st.markdown("### 🎖️ Current Records Held")
         r1, r2, r3 = st.columns(3)
-        
         with r1:
             with st.container(border=True):
-                iso_code = info.get('person.country.iso2', 'N/A')
-                flag = fn.get_flag_emoji(iso_code)
-                st.metric(f"{flag} National Records", nr)
-        
+                st.metric("🇺🇳 National Records", nr)
         with r2:
             with st.container(border=True):
                 st.metric("🌍 Continental Records", cr)
-                
         with r3:
             with st.container(border=True):
                 st.metric("🪐 World Records", wr)
 
     st.divider()
 
-    # --- 4. RANKINGS ACTUALES (Tabla) ---
+    
+    # --- LÓGICA DE PRs ACTIVOS (Basada en tu función de cards) ---
+    if not df.empty:
+        active_prs = []
+        # Iteramos por cada evento que tiene el usuario
+        for event_code in df['Event'].unique():
+
+            # if event is 333ft, magic, mmagic, skip
+            if event_code.startswith('333ft') or event_code.startswith('magic') or event_code.startswith('mmagic'):
+                continue
+
+            ev_df = df[df['Event'] == event_code]
+            
+            # Encontramos el PB de Single para este evento (el más rápido y antiguo en caso de empate)
+            s_df = ev_df[ev_df['best_cs'] > 0]
+            if not s_df.empty:
+                best_s = s_df.sort_values(by=['best_cs', 'CompDate']).iloc[0]
+                active_prs.append({
+                    'date': best_s['CompDate'],
+                    'event': event_code,
+                    'type': 'Single',
+                    'time': fn.format_wca_time(best_s['best_cs'], event_code=event_code),
+                    'comp': best_s['CompName']
+                })
+
+            # Encontramos el PB de Average para este evento
+            a_df = ev_df[ev_df['avg_cs'] > 0]
+            if not a_df.empty:
+                best_a = a_df.sort_values(by=['avg_cs', 'CompDate']).iloc[0]
+                active_prs.append({
+                    'date': best_a['CompDate'],
+                    'event': event_code,
+                    'type': 'Average',
+                    'time': fn.format_wca_time(best_a['avg_cs'], event_code=event_code),
+                    'comp': best_a['CompName']
+                })
+
+        if active_prs:
+            # Ordenamos todos los PBs encontrados por fecha
+            active_prs_sorted = sorted(active_prs, key=lambda x: x['date'])
+            oldest = active_prs_sorted[0]
+            newest = active_prs_sorted[-1]
+
+            # --- 3. RENDERIZADO DE TARJETAS ---
+            st.markdown("### ⏳ Record Milestones")
+            c_old, c_new = st.columns(2)
+
+            with c_old:
+                event_label = f"{event_dict.get(oldest['event'], oldest['event'])} ({oldest['type']})"
+                render_pr_card(
+                    "Oldest active PR", 
+                    oldest['time'], 
+                    f"{event_label} \n\n {oldest['comp']}", 
+                    oldest['date'].strftime('%d %b %Y')
+                )
+
+            with c_new:
+                event_label = f"{event_dict.get(newest['event'], newest['event'])} ({newest['type']})"
+                render_pr_card(
+                    "Most recent PR", 
+                    newest['time'], 
+                    f"{event_label} \n\n {newest['comp']}", 
+                    newest['date'].strftime('%d %b %Y')
+                )
+    st.divider()
+
+    # --- 6. RANKINGS (Tabla) ---
     st.subheader("🌍 Current Global Rankings")
     
     WCA_ORDER = [
@@ -230,23 +286,20 @@ def render_summary_enhanced(data, wca_id):
         "pyram", "skewb", "sq1", "444bf", "555bf", "333mbf"
     ]
     
-    # Como 'info' es plano, no tenemos 'personal_records' como dict.
-    # Usamos la lógica de claves dinámicas
     if not df.empty:
         user_events = df['Event'].unique().tolist()
-        
-        # Ordenamos
+        # Ordenamos según WCA_ORDER
         sorted_events = [ev for ev in WCA_ORDER if ev in user_events] + \
                         [ev for ev in user_events if ev not in WCA_ORDER]
 
         rank_rows = []
-        event_dict = getattr(fn, 'event_dict', {})
 
         for ev_code in sorted_events:
-            ev_name = event_dict.get(ev_code, ev_code)
+            ev_name = local_event_dict.get(ev_code, ev_code)
             
-            # Helper para sacar datos del JSON plano
+            # Helper interno para extraer rankings
             def get_val(code, type_, rank_type):
+                # Construimos la clave: personal_records.333.single.world_rank
                 key = f"personal_records.{code}.{type_}.{rank_type}"
                 return info.get(key, "-")
 
@@ -258,7 +311,6 @@ def render_summary_enhanced(data, wca_id):
             a_cont = get_val(ev_code, "average", "continent_rank")
             a_country = get_val(ev_code, "average", "country_rank")
             
-            # Solo añadir si hay algún dato
             if s_world != "-" or a_world != "-":
                 rank_rows.append({
                     "Event": ev_name,
@@ -272,17 +324,16 @@ def render_summary_enhanced(data, wca_id):
                 rdf.set_index("Event"), 
                 use_container_width=True,
                 column_config={
-                "NR (Single)": st.column_config.NumberColumn("NR (Single)", format="%d"),
-                "CR (Single)": st.column_config.NumberColumn("CR (Single)", format="%d"),
-                "WR (Single)": st.column_config.NumberColumn("WR (Single)", format="%d"),
-                "NR (Avg)": st.column_config.NumberColumn("NR (Avg)", format="%d"),
-                "CR (Avg)": st.column_config.NumberColumn("CR (Avg)", format="%d"),
-                "WR (Avg)": st.column_config.NumberColumn("WR (Avg)", format="%d"),
+                    "NR (Single)": st.column_config.NumberColumn("NR (Single)", format="%d"),
+                    "CR (Single)": st.column_config.NumberColumn("CR (Single)", format="%d"),
+                    "WR (Single)": st.column_config.NumberColumn("WR (Single)", format="%d"),
+                    "NR (Avg)": st.column_config.NumberColumn("NR (Avg)", format="%d"),
+                    "CR (Avg)": st.column_config.NumberColumn("CR (Avg)", format="%d"),
+                    "WR (Avg)": st.column_config.NumberColumn("WR (Avg)", format="%d"),
                 }
             )
         else:
             st.info("No ranking data available.")
-
 
 def render_competitions_tab(data):
     st.header("🌍 Competitions Hub")
@@ -300,6 +351,7 @@ def render_competitions_tab(data):
 
 def render_personal_bests_cards(data):
     st.header("🏆 Personal Bests")
+
     df = data["results"].copy()
     if df.empty: return
 
@@ -333,7 +385,7 @@ def render_personal_bests_cards(data):
                 a_date = best_avg_row['CompDate'].strftime('%d %b %Y') if pd.notnull(best_avg_row['CompDate']) else "Unknown"
                 render_pr_card("AVERAGE", a_time, best_avg_row['CompName'], a_date)
             else:
-                st.write("") 
+                st.write("")
 
 def render_statistics(data):
     st.header("📊 Statistics")

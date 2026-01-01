@@ -199,7 +199,9 @@ def get_wcaid_info(wca_id):
 def prs_info(wca_id, results_df=None):
     if results_df is None:
         results_df = get_wca_results(wca_id)
-        
+
+    # turn results upside down, as its sorted desc by default
+
     pr_comps = {}
     pr_rows = results_df[results_df['pr'].notnull()].copy()
 
@@ -222,32 +224,6 @@ def prs_info(wca_id, results_df=None):
         if pr_type in ['average', 'sin+avg']: store_pr('average')
             
     return pr_comps
-
-def oldest_and_newest_pr(wca_id, prs_data=None):
-    if prs_data is None:
-        prs_data = prs_info(wca_id)
-        
-    lista_fechas = []
-    for key, info in prs_data.items():
-        evento = info[4]
-        if evento.startswith('333ft') or evento.startswith('magic') or evento.startswith('mmagic'):
-            continue
-        
-        fecha_str = info[2]
-        if fecha_str and fecha_str != "Unknown":
-            try:
-                fecha_obj = datetime.strptime(fecha_str, '%Y-%m-%d')
-                lista_fechas.append((fecha_obj, info))
-            except ValueError:
-                pass
-
-    if not lista_fechas:
-        return None, None
-
-    pr_mas_antiguo = min(lista_fechas, key=lambda x: x[0])[1]
-    pr_mas_reciente = max(lista_fechas, key=lambda x: x[0])[1]
-
-    return pr_mas_antiguo, pr_mas_reciente
 
 def number_of_prs(wca_id, results_df=None):
     if results_df is None:
@@ -347,7 +323,5 @@ def get_heatmap_data(results_df):
 
 # rapido para probar la funcion de info
 if __name__ == "__main__":
-    wcaid = "2015GARC01"
-    info = get_wcaid_info(wcaid)
-    print(info.keys())
-    
+    wcaid = "2016LOPE37"
+
