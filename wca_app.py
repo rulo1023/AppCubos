@@ -49,7 +49,6 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 
-
 # Diccionario de Eventos
 event_dict = {
     "333": "3x3x3", "222": "2x2x2", "444": "4x4x4", "555": "5x5x5", "666": "6x6x6", "777": "7x7x7",
@@ -57,6 +56,20 @@ event_dict = {
     "pyram": "Pyraminx", "skewb": "Skewb", "sq1": "Square-1", "clock": "Clock", 
     "444bf": "4x4x4 Blind", "555bf": "5x5x5 Blind", "333mbf": "3x3x3 Multi-Blind"
 }
+
+        # Diccionario auxiliar para tooltips (asegúrate de tenerlo definido o usa el ID directamente)
+event_dict = {
+            "333": "3x3x3", "222": "2x2x2", "444": "4x4x4", 
+            "555": "5x5x5", "666": "6x6x6", "777": "7x7x7", "333fm": "3x3x3 Fewest Moves",
+            "333bf": "3x3x3 Blindfolded", "333oh": "3x3x3 One-Handed", 
+            "minx": "Megaminx", "pyram": "Pyraminx", "skewb": "Skewb", 
+            "sq1": "Square-1", "clock": "Clock", "333ft": "3x3x3 With Feet",
+            "magic": "Magic", "mmagic": "Master Magic", "444bf": "4x4x4 Blindfolded",
+            "555bf": "5x5x5 Blindfolded",
+            "333mbf": "3x3x3 Multi-Blind"
+        }
+
+
 
 # --- 2. HELPERS ---
 def render_metric(label, value):
@@ -100,7 +113,7 @@ def load_all_data(wca_id):
 
 # --- 4. VISTAS ---
 
-def render_summary(data, wca_id):
+def render_summary(data, wca_id): # old version
     info = data["info"]
     iso_code = info.get('person.country.iso2', 'N/A')
     flag = fn.get_flag_emoji(iso_code)
@@ -124,6 +137,134 @@ def render_summary(data, wca_id):
     with m1: render_metric("🥇 Gold", info.get('medals.gold', 0))
     with m2: render_metric("🥈 Silver", info.get('medals.silver', 0))
     with m3: render_metric("🥉 Bronze", info.get('medals.bronze', 0))
+
+def render_summary_enhanced(data, wca_id):
+    info = data["info"]
+    df = data["results"]
+    
+    iso_code = info.get('person.country.iso2', 'N/A')
+    flag = fn.get_flag_emoji(iso_code)
+    
+    # --- CABECERA Y TARJETAS (Mantenemos lo anterior igual) ---
+    col_profile, col_empty = st.columns([2, 1])
+    with col_profile:
+        st.markdown(f"## {flag} {info.get('person.name', wca_id)}")
+        st.caption(f"WCA ID: {wca_id}")
+
+    st.divider()
+
+    # Tarjetas de estadísticas
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        with st.container(border=True):
+            st.markdown("### 🏆 Medals")
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("🥇 Gold", info.get('medals.gold', 0))
+            mc2.metric("🥈 Silver", info.get('medals.silver', 0))
+            mc3.metric("🥉 Bronze", info.get('medals.bronze', 0))
+
+    with col2:
+        with st.container(border=True):
+            st.markdown("### 📊 Volume")
+            vc1, vc2 = st.columns(2)
+            total_solves = info.get('total_solves', 0)
+            if total_solves == 0 and not df.empty: total_solves = len(df)
+            competition_count = info.get('competition_count', len(df['Competition'].unique()))
+            vc1.metric("Comps", competition_count)
+            vc2.metric("Solves", total_solves)
+
+    with col3:
+        with st.container(border=True):
+            st.markdown("### 📅 Career")
+            years_active = 0
+            date_range_str = "-"
+            fav_event_name = "-"
+            if not df.empty:
+                min_date = df['CompDate'].min()
+                max_date = df['CompDate'].max()
+                years_active = max_date.year - min_date.year + 1
+                date_range_str = f"{min_date.strftime('%b %Y')} - {max_date.strftime('%b %Y')}"
+                fav_event_code = df['Event'].value_counts().idxmax()
+                fav_event_name = event_dict[fav_event_code] if fav_event_code in event_dict else fav_event_code
+
+            cc1, cc2 = st.columns(2)
+            cc1.metric("Years", years_active)
+            cc2.metric("Fav Event", fav_event_name)
+            st.caption(f"📅 {date_range_str}")
+
+    # --- RANKINGS ACTUALES (CORREGIDO) ---
+    st.subheader("🌍 Current Rankings")
+    
+    rank_rows = []
+
+    # SOLUCIÓN: Usamos los eventos del DataFrame para saber qué claves buscar
+    if not df.empty:
+        unique_events = df['Event'].unique()
+        # ordenamos unique_events según el orden de event_dict.keys()
+
+
+        for ev_code in unique_events:
+            ev_name = event_dict.get(ev_code, ev_code)
+            
+            # Función auxiliar para construir la clave plana
+            def get_val(code, type_, rank_type):
+                # Construye: personal_records.333.single.world_rank
+                key = f"personal_records.{code}.{type_}.{rank_type}"
+                return info.get(key, "-")
+
+            # Obtenemos los datos construyendo las claves dinámicamente
+            s_world = get_val(ev_code, "single", "world_rank")
+            s_cont = get_val(ev_code, "single", "continent_rank")
+            s_country = get_val(ev_code, "single", "country_rank")
+            
+            a_world = get_val(ev_code, "average", "world_rank")
+            a_cont = get_val(ev_code, "average", "continent_rank")
+            a_country = get_val(ev_code, "average", "country_rank")
+            
+            # Solo añadimos si hay algún dato (evitamos filas vacías si no hay ranking)
+            if s_world != "-" or a_world != "-":
+                rank_rows.append({
+                    "Event": ev_name,
+                    "NR (Single)": s_country, "CR (Single)": s_cont, "WR (Single)": s_world,
+                    "NR (Avg)": a_country, "CR (Avg)": a_cont, "WR (Avg)": a_world
+                })
+            
+    if rank_rows:
+        rdf = pd.DataFrame(rank_rows)
+        rdf = rdf.sort_values("Event")
+
+        st.dataframe(
+            rdf.set_index("Event"), 
+            use_container_width=True,
+            column_config={
+                "NR (Single)": st.column_config.NumberColumn("NR (Single)", format="%d"),
+                "CR (Single)": st.column_config.NumberColumn("CR (Single)", format="%d"),
+                "WR (Single)": st.column_config.NumberColumn("WR (Single)", format="%d"),
+                "NR (Avg)": st.column_config.NumberColumn("NR (Avg)", format="%d"),
+                "CR (Avg)": st.column_config.NumberColumn("CR (Avg)", format="%d"),
+                "WR (Avg)": st.column_config.NumberColumn("WR (Avg)", format="%d"),
+            }
+        )
+    else:
+        st.info("No ranking data available.")
+
+def render_competitions_tab(data):
+    st.header("🌍 Competitions Hub")
+    
+    # Creamos 3 pestañas
+    tab1, tab2, tab3 = st.tabs(["📜 History List", "🗺️ Travel Map", "🔥 Activity Heatmap"])
+    
+    with tab1:
+        # Llamamos a tu función existente de lista
+        render_competition_list(data)
+        
+    with tab2:
+        # Llamamos a tu función existente de mapa
+        render_competition_map(data)
+        
+    with tab3:
+        # Llamamos a tu función existente de heatmap
+        render_activity_heatmap(data)
 
 def render_personal_bests_cards(data):
     st.header("🏆 Personal Bests")
@@ -163,105 +304,197 @@ def render_personal_bests_cards(data):
                 st.write("") 
 
 def render_statistics(data):
-
-
-
     st.header("📊 Statistics")
     df = data["results"]
     if not df.empty:
         c1, c2 = st.columns(2)
         with c1:
-            st.subheader("Round Breakdown")
-            event_counts = df['Event'].value_counts().reset_index()
-            event_counts.columns = ['Event', 'Count']
-            event_counts['Event'] = event_counts['Event'].map(event_dict).fillna(event_counts['Event'])
-            st.plotly_chart(px.pie(event_counts, values='Count', names='Event', hole=0.5), use_container_width=True)
+            with c1:
+                st.subheader("Round Breakdown")
+                event_counts = df['Event'].value_counts().reset_index()
+                event_counts.columns = ['EventID', 'Count']
+                
+                event_order = list(event_dict.keys())
+                event_counts['sort_order'] = event_counts['EventID'].apply(
+                    lambda x: event_order.index(x) if x in event_order else 999
+                )
+                
+                # Ordenar y limpiar
+                event_counts = event_counts[event_counts['sort_order'] != 999].sort_values('sort_order')
+                event_counts['Event Name'] = event_counts['EventID'].map(event_dict)
+                
+                # Dibujar con Plotly asegurando que no re-ordene por tamaño
+                fig = px.pie(event_counts, values='Count', names='Event Name', hole=0.5)
+                fig.update_traces(sort=False) # IMPORTANTE: Esto mantiene nuestro orden
+                st.plotly_chart(fig, use_container_width=True)
+
         with c2:
-            st.subheader("PR Count by Event")
-            pr_clean = {k: v for k,v in data["stats_prs"].items() if k != 'total'}
-            if pr_clean:
-                pr_df = pd.DataFrame(list(pr_clean.items()), columns=['Event', 'Count'])
-                pr_df['Event'] = pr_df['Event'].map(event_dict).fillna(pr_df['Event'])
-                st.bar_chart(pr_df.set_index('Event'))
+            with c2:
+                st.subheader("PR Count by Event")
+                # 1. Obtener los PRs ignorando el total
+                pr_data = data["stats_prs"].copy()
+                pr_data.pop('total', None)
+                
+                if pr_data:
+                    # 2. Crear DataFrame
+                    pr_df = pd.DataFrame(list(pr_data.items()), columns=['EventID', 'Count'])
+                    
+                    # 3. Definir el orden estricto basado en tu event_dict
+                    event_order = list(event_dict.keys())
+                    
+                    # 4. Crear columna de orden: si el evento no está en el dict, va al final (999)
+                    pr_df['sort_order'] = pr_df['EventID'].apply(
+                        lambda x: event_order.index(x) if x in event_order else 999
+                    )
+                    
+                    # 5. Filtrar eventos "fantasma" o muy antiguos que no quieras (opcional)
+                    # Si quieres que 333ft no aparezca si no está en tu dict:
+                    pr_df = pr_df[pr_df['sort_order'] != 999]
+                    
+                    # 6. Mapear los nombres amigables (333 -> 3x3x3)
+                    pr_df['Event Name'] = pr_df['EventID'].map(event_dict)
+                    
+                    # 7. Ordenar físicamente el DataFrame
+                    pr_df = pr_df.sort_values('sort_order')
+                    
+                    # 8. Dibujar usando el nombre amigable
+                    st.bar_chart(pr_df.set_index('Event Name')['Count'])
+                else:
+                    st.info("No PRs recorded yet.")
 
 def render_activity_heatmap(data):
-    st.header("🗓️ Competition Heatmap")
+    st.header("🗓️ Activity Heatmap")
     df = data["results"]
     if df.empty:
-        st.warning("No data available for heatmap.")
+        st.warning("No data available.")
         return
 
-    # Usamos la función de ayuda para preparar datos
     heatmap_data = fn.get_heatmap_data(df)
-    
-    # Crear una matriz completa (años x meses) para que no falten huecos
-    years = sorted(heatmap_data['Year'].unique())
-    months = list(range(1, 13))
-    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-    
-    # Pivotar los datos
     pivot_df = heatmap_data.pivot(index='Year', columns='Month', values='Count').fillna(0)
     
-    # Asegurar que todos los meses están presentes
-    for m in months:
-        if m not in pivot_df.columns:
-            pivot_df[m] = 0
-    pivot_df = pivot_df[months] # Reordenar columnas
+    for m in range(1, 13):
+        if m not in pivot_df.columns: pivot_df[m] = 0
+    
+    pivot_df = pivot_df[sorted(pivot_df.columns)]
+    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-    # Crear el gráfico con Plotly
     fig = go.Figure(data=go.Heatmap(
         z=pivot_df.values,
         x=month_names,
-        y=pivot_df.index,
+        y=pivot_df.index.astype(str), # Forzamos string para el orden correcto en el eje Y
         colorscale='Reds',
         xgap=3, ygap=3,
-        hovertemplate='Year: %{y}<br>Month: %{x}<br>Competitions: %{z}<extra></extra>'
+        hovertemplate='Year: %{y}<br>Month: %{x}<br>Comps: %{z}<extra></extra>'
     ))
 
-    fig.update_layout(
-        title="Competitions per Month/Year",
-        xaxis_nticks=12,
-        yaxis_type='category', # Para que trate los años como etiquetas
-        plot_bgcolor='rgba(0,0,0,0)',
-    )
-
+    fig.update_layout(xaxis_nticks=12, plot_bgcolor='rgba(0,0,0,0)')
     st.plotly_chart(fig, use_container_width=True)
-    
-    # Tip adicional: Mostrar racha o año más activo
-    max_year = heatmap_data.groupby('Year')['Count'].sum().idxmax()
-    st.info(f"💡 Your most active year was **{max_year}**.")
 
-
-def render_competitions(data):
+def render_competitions(data): # Antiguo render_competition_list
     st.header("🌍 Competitions History")
 
-    # --- B. TABLA ---
     df = data["results"].copy()
     if not df.empty:
-        # Agrupamos por competición para no repetir filas por cada ronda
-        comps = df.groupby(['CompName', 'CompDate', 'Country']).size().reset_index(name='Rounds')
+        # 1. Agrupar datos (Igual que antes)
+        comps = df.groupby(['CompName', 'CompDate', 'Country'])['Event'].unique().reset_index()
         comps = comps.sort_values(by="CompDate", ascending=False)
         
-        # Formatear localización y fecha
-        comps['Location'] = comps['Country'].apply(lambda x: f"{fn.get_flag_emoji(x)} {fn.get_country_name(x)}")
         comps['Date'] = comps['CompDate'].dt.strftime('%Y-%m-%d')
+        comps['Location'] = comps['Country'].apply(lambda x: f"{fn.get_flag_emoji(x)} {fn.get_country_name(x)}")
         
-        st.dataframe(
-            comps[['Date', 'CompName', 'Location']], 
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "Date": st.column_config.TextColumn("Date", width="small"),
-                "CompName": st.column_config.TextColumn("Competition", width="large"),
-                "Location": st.column_config.TextColumn("Location", width="medium")
-            }
-        )
+        # 2. Generar HTML de iconos (Con el arreglo de tamaño incluido)
+        def get_event_icons_html(event_list):
+            # Orden personalizado: 333 primero, luego 222, etc. o alfabético
+            # Aquí usamos el orden que viene del groupby, o puedes hacer sorted(event_list)
+            sorted_events = sorted(event_list) 
+            
+            html = '<div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">'
+            for ev in sorted_events:
+                icon_url = f"https://raw.githubusercontent.com/cubing/icons/main/src/svg/event/{ev}.svg"
+                # Iconos ligeramente más pequeños (20px) para que la fila no sea gigante
+                html += f'<img src="{icon_url}" class="wca-icon" title="{event_dict.get(ev, ev)}">'
+            html += "</div>"
+            return html
+
+        comps['Events'] = comps['Event'].apply(get_event_icons_html)
+
+        # Seleccionar columnas
+        final_view = comps[['Date', 'CompName', 'Location', 'Events']].rename(columns={'CompName': 'Competition'})
+        
+        # 3. Convertir a HTML
+        table_html = final_view.to_html(index=False, escape=False)
+        
+        # 4. CSS "Nativo" de Streamlit
+        # Este CSS imita los colores, fuentes y bordes de st.dataframe
+        st.markdown("""
+        <style>
+        /* Contenedor con bordes redondeados como los widgets de Streamlit */
+        .wca-table-container {
+            border: 1px solid rgba(49, 51, 63, 0.2);
+            border-radius: 0.5rem;
+            overflow: hidden; /* Para que las esquinas redondeadas recorten la tabla */
+            margin-bottom: 1rem;
+        }
+
+        .wca-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: "Source Sans Pro", sans-serif; /* Fuente nativa de Streamlit */
+            font-size: 14px;
+            color: rgb(49, 51, 63); /* Color texto oscuro estándar */
+        }
+        
+        /* Ajustes para modo oscuro (automáticos si el navegador lo soporta, 
+           pero Streamlit inyecta sus variables. Usamos transparencia para compatibilidad) */
+        @media (prefers-color-scheme: dark) {
+            .wca-table { color: #fafafa; }
+            .wca-table-container { border-color: rgba(250, 250, 250, 0.2); }
+        }
+
+        .wca-table th {
+            text-align: left;
+            background-color: rgba(150, 150, 150, 0.1); /* Fondo gris sutil para cabecera */
+            padding: 12px 16px;
+            font-weight: 600;
+            border-bottom: 1px solid rgba(49, 51, 63, 0.2);
+        }
+
+        .wca-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(49, 51, 63, 0.1);
+            vertical-align: middle;
+        }
+
+        /* Hover effect en las filas */
+        .wca-table tr:hover td {
+            background-color: rgba(150, 150, 150, 0.05);
+        }
+
+        /* Control estricto de iconos */
+        img.wca-icon {
+            width: 22px !important;
+            height: 22px !important;
+            object-fit: contain;
+            vertical-align: middle;
+            margin: 0 !important;
+        }
+        
+        /* Ocultar bordes de la tabla generada por pandas por defecto */
+        .dataframe { border: none !important; }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Renderizamos la tabla dentro del contenedor estilizado
+        table_html = table_html.replace('<table border="1" class="dataframe">', '<table class="wca-table">')
+        st.markdown(f'<div class="wca-table-container">{table_html}</div>', unsafe_allow_html=True)
 
     st.divider()
 
-    # --- A. MAPA ---
+    # --- A. MAPA (Sin cambios) ---
     map_df = pd.DataFrame(data["map_data"])
     if not map_df.empty:
+        # ... (Mantén el código del mapa aquí igual que antes) ...
+        # (Para ahorrar espacio no lo copio de nuevo, pero asegúrate de dejarlo aquí)
         with st.expander("🗺️ View Map", expanded=True):
             map_df['pos_key'] = map_df['lat'].astype(str) + map_df['lon'].astype(str)
             metres_in_degrees = 0.000045 
@@ -292,18 +525,136 @@ def render_competitions(data):
                 initial_view_state=view_state, layers=[layer],
                 tooltip={"text": "{nombre}\n📅 {fecha}"}
             ))
+
+def render_competition_list(data):
+    st.header("📋 Competition History")
+    df = data["results"].copy()
     
+    if not df.empty:
+        # 1. Agrupar obteniendo eventos únicos
+        comps = df.groupby(['CompName', 'CompDate', 'Country'])['Event'].unique().reset_index()
+        comps = comps.sort_values(by="CompDate", ascending=False)
+        
+        comps['Date'] = comps['CompDate'].dt.strftime('%Y-%m-%d')
+        comps['Location'] = comps['Country'].apply(lambda x: f"{fn.get_flag_emoji(x)} {fn.get_country_name(x)}")
+    
+
+        # 2. Generador de HTML con iconos
+        def get_event_icons_html(event_list):
+            html = '<div style="display: flex; flex-wrap: wrap; gap: 4px;">'
+            sorted_events = sorted(event_list)
+            for ev in sorted_events:
+                icon_url = f"https://raw.githubusercontent.com/cubing/icons/main/src/svg/event/{ev}.svg"
+                html += f'<img src="{icon_url}" class="wca-icon" title="{event_dict.get(ev, ev)}">'
+            html += "</div>"
+            return html
+
+        comps['Events'] = comps['Event'].apply(get_event_icons_html)
+        final_view = comps[['Date', 'CompName', 'Location', 'Events']].rename(columns={'CompName': 'Competition'})
+        
+        # 3. Renderizar tabla HTML
+        table_html = final_view.to_html(index=False, escape=False)
+        
+        # --- CSS PARA EL SCROLL INTERNO Y ESTILO ---
+        st.markdown("""
+        <style>
+        /* Contenedor que limita la altura y permite el scroll */
+        .wca-scroll-container {
+            max-height: 450px; /* Ajusta esta altura a tu gusto */
+            overflow-y: auto;
+            border: 1px solid rgba(49, 51, 63, 0.2);
+            border-radius: 8px;
+        }
+
+        /* Hacer que la cabecera se quede fija al hacer scroll (Sticky header) */
+        .wca-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background-color: #f0f2f6; /* Color de fondo de la cabecera */
+        }
+
+        .wca-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: sans-serif;
+            font-size: 14px;
+        }
+        
+        .wca-table th, .wca-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        img.wca-icon {
+            width: 22px !important;
+            height: 22px !important;
+            object-fit: contain;
+            display: inline-block !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Inyectar clase y envolver en el div de scroll
+        table_html = table_html.replace('<table border="1" class="dataframe">', '<table class="wca-table">')
+        
+        # Aquí envolvemos la tabla en el div con la clase wca-scroll-container
+        st.markdown(f'<div class="wca-scroll-container">{table_html}</div>', unsafe_allow_html=True)
+
+def render_competition_map(data):
+    st.header("🌍 World Map of Competitions")
+    map_df = pd.DataFrame(data["map_data"])
+    
+    if map_df.empty:
+        st.warning("No location data available to display the map.")
+        return
+
+    # Lógica de Jitter para evitar solapamiento en la misma ciudad
+    map_df['pos_key'] = map_df['lat'].astype(str) + map_df['lon'].astype(str)
+    metres_in_degrees = 0.000045 
+    
+    def apply_jitter(group):
+        if len(group) > 1:
+            for i in range(len(group)):
+                angle = 2 * np.pi * i / len(group)
+                group.iloc[i, group.columns.get_loc('lat')] += metres_in_degrees * np.cos(angle)
+                group.iloc[i, group.columns.get_loc('lon')] += metres_in_degrees * np.sin(angle)
+        return group
+
+    map_df = map_df.groupby('pos_key', group_keys=False).apply(apply_jitter)
+
+    view_state = pdk.ViewState(
+        latitude=map_df['lat'].mean(), longitude=map_df['lon'].mean(),
+        zoom=1.5, pitch=0
+    )
+    
+    layer = pdk.Layer(
+        "ScatterplotLayer", map_df,
+        get_position='[lon, lat]', get_color='[255, 75, 75, 200]',
+        radius_min_pixels=5, radius_max_pixels=15,
+        pickable=True, stroked=True,
+        line_width_min_pixels=1, get_line_color=[255, 255, 255]
+    )
+    
+    st.pydeck_chart(pdk.Deck(
+        map_style='https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+        initial_view_state=view_state, layers=[layer],
+        tooltip={"text": "{nombre}\n📅 {fecha}"}
+    ))
+
 def render_progression(data):
     st.header("📈 Personal Best Progression")
     df = data["results"].copy()
     if df.empty: return
 
-    # Selectores
-    available_events = df['Event'].unique()
-    opts = {event_dict.get(e, e): e for e in available_events}
+    # Obtener eventos disponibles pero ordenarlos según event_dict
+    available_events = [e for e in event_dict.keys() if e in df['Event'].unique()]
+    opts = {event_dict[e]: e for e in available_events}
     
     c1, c2 = st.columns([3, 1])
     with c1:
+        # El orden aquí será ahora siempre el de event_dict
         sel_name = st.selectbox("Select Event:", list(opts.keys()))
     with c2:
         type_sel = st.selectbox("Type:", ["Single", "Average"])
@@ -375,15 +726,16 @@ def render_progression(data):
 
 # --- 5. LAYOUT PRINCIPAL ---
 
-
+# --- 5. LAYOUT PRINCIPAL ---
 
 st.sidebar.title("🎲 MyCubing")
 wca_id_input = st.sidebar.text_input("WCA ID", placeholder="2016LOPE37").upper().strip()
+
+# Menú simplificado: ahora "Competitions" agrupa Lista, Mapa y Heatmap
 selection = st.sidebar.radio("Go to:", [
     "Summary", 
     "Personal Bests", 
-    "Competitions", 
-    "Competition Heatmap", 
+    "Competitions",      # <--- NUEVA PESTAÑA UNIFICADA
     "Statistics", 
     "Progression"
 ])
@@ -394,13 +746,22 @@ if wca_id_input:
         data = load_all_data(wca_id_input)
 
     if data:
-        if selection == "Summary": render_summary(data, wca_id_input)
-        elif selection == "Personal Bests": render_personal_bests_cards(data)
-        elif selection == "Competitions": render_competitions(data)
-        elif selection == "Competition Heatmap": render_activity_heatmap(data)
-        elif selection == "Statistics": render_statistics(data)
-        elif selection == "Progression": render_progression(data)
-        
+        if selection == "Summary": 
+            render_summary_enhanced(data, wca_id_input)
+            
+        elif selection == "Personal Bests": 
+            render_personal_bests_cards(data)
+            
+        elif selection == "Competitions": 
+            render_competitions_tab(data)  # <--- Llamada a la nueva función
+            
+        elif selection == "Statistics": 
+            render_statistics(data)
+            
+        elif selection == "Progression": 
+            render_progression(data)
+
+        # Footer sidebar con nombre
         name = data['info'].get('person.name', wca_id_input)
         st.sidebar.success(f"Loaded: {name}")
     else:

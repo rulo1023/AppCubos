@@ -329,3 +329,11 @@ def get_heatmap_data(results_df):
     # Contar competiciones por mes/año
     heatmap_df = df_unique_comps.groupby(['Year', 'Month']).size().reset_index(name='Count')
     return heatmap_df
+
+
+# rapido para probar la funcion de info
+if __name__ == "__main__":
+    wcaid = "2015GARC01"
+    info = get_wcaid_info(wcaid)
+    print(info.keys())
+    
