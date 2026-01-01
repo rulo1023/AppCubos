@@ -187,7 +187,7 @@ def render_summary_enhanced(data, wca_id):
                 date_range_str = f"{min_date.strftime('%b %Y')} - {max_date.strftime('%b %Y')}"
                 
                 fav_event_code = df['Event'].value_counts().idxmax()
-                fav_event_name = ORDERED_EVENTS.get(fav_event_code, fav_event_code)
+                fav_event_name = ORDERED_EVENTS[fav_event_code]
 
             cc1, cc2 = st.columns(2)
             cc1.metric("Years", years_active)
@@ -282,6 +282,7 @@ def render_summary_enhanced(data, wca_id):
             )
         else:
             st.info("No ranking data available.")
+
 
 def render_competitions_tab(data):
     st.header("🌍 Competitions Hub")
