@@ -145,7 +145,7 @@ def render_summary_enhanced(data, wca_id):
     iso_code = info.get('person.country.iso2', 'N/A')
     flag = fn.get_flag_emoji(iso_code)
     
-    # --- CABECERA Y TARJETAS (Mantenemos lo anterior igual) ---
+    # --- 1. CABECERA ---
     col_profile, col_empty = st.columns([2, 1])
     with col_profile:
         st.markdown(f"## {flag} {info.get('person.name', wca_id)}")
@@ -153,8 +153,10 @@ def render_summary_enhanced(data, wca_id):
 
     st.divider()
 
-    # Tarjetas de estadísticas
+    # --- 2. TARJETAS DE ESTADÍSTICAS GENERALES ---
     col1, col2, col3 = st.columns(3)
+    
+    # Tarjeta 1: Medallas
     with col1:
         with st.container(border=True):
             st.markdown("### 🏆 Medals")
@@ -163,6 +165,7 @@ def render_summary_enhanced(data, wca_id):
             mc2.metric("🥈 Silver", info.get('medals.silver', 0))
             mc3.metric("🥉 Bronze", info.get('medals.bronze', 0))
 
+    # Tarjeta 2: Volumen
     with col2:
         with st.container(border=True):
             st.markdown("### 📊 Volume")
@@ -173,46 +176,93 @@ def render_summary_enhanced(data, wca_id):
             vc1.metric("Comps", competition_count)
             vc2.metric("Solves", total_solves)
 
+    # Tarjeta 3: Trayectoria
     with col3:
         with st.container(border=True):
             st.markdown("### 📅 Career")
             years_active = 0
             date_range_str = "-"
             fav_event_name = "-"
+            
+            ORDERED_EVENTS = {
+                "333": "3x3x3 Cube", "222": "2x2x2 Cube", "444": "4x4x4 Cube",
+                "555": "5x5x5 Cube", "666": "6x6x6 Cube", "777": "7x7x7 Cube",
+                "333bf": "3x3x3 Blindfolded", "333fm": "3x3x3 FM", "333oh": "3x3x3 OH",
+                "clock": "Clock", "minx": "Megaminx", "pyram": "Pyraminx",
+                "skewb": "Skewb", "sq1": "Square-1", "444bf": "4x4x4 Blindfolded",
+                "555bf": "5x5x5 Blindfolded", "333mbf": "3x3x3 Multi-Blind"
+            }
+
             if not df.empty:
                 min_date = df['CompDate'].min()
                 max_date = df['CompDate'].max()
                 years_active = max_date.year - min_date.year + 1
                 date_range_str = f"{min_date.strftime('%b %Y')} - {max_date.strftime('%b %Y')}"
+                
                 fav_event_code = df['Event'].value_counts().idxmax()
-                fav_event_name = event_dict[fav_event_code] if fav_event_code in event_dict else fav_event_code
+                fav_event_name = ORDERED_EVENTS.get(fav_event_code, fav_event_code)
 
             cc1, cc2 = st.columns(2)
             cc1.metric("Years", years_active)
             cc2.metric("Fav Event", fav_event_name)
             st.caption(f"📅 {date_range_str}")
 
-    # --- RANKINGS ACTUALES (CORREGIDO) ---
-    st.subheader("🌍 Current Rankings")
+    # --- 3. NUEVAS TARJETAS DE RÉCORDS (Simplificado usando info) ---
+    # Obtenemos los datos directamente de las claves planas que me has pasado
+    nr = info.get('records.national', 0)
+    cr = info.get('records.continental', 0)
+    wr = info.get('records.world', 0)
     
-    rank_rows = []
+    # Solo mostramos si hay algún récord
+    if (nr + cr + wr) > 0:
+        st.markdown("### 🎖️ Current Records Held")
+        r1, r2, r3 = st.columns(3)
+        
+        with r1:
+            with st.container(border=True):
+                iso_code = info.get('person.country.iso2', 'N/A')
+                flag = fn.get_flag_emoji(iso_code)
+                st.metric(f"{flag} National Records", nr)
+        
+        with r2:
+            with st.container(border=True):
+                st.metric("🌍 Continental Records", cr)
+                
+        with r3:
+            with st.container(border=True):
+                st.metric("🪐 World Records", wr)
 
-    # SOLUCIÓN: Usamos los eventos del DataFrame para saber qué claves buscar
+    st.divider()
+
+    # --- 4. RANKINGS ACTUALES (Tabla) ---
+    st.subheader("🌍 Current Global Rankings")
+    
+    WCA_ORDER = [
+        "333", "222", "444", "555", "666", "777", 
+        "333bf", "333fm", "333oh", "clock", "minx", 
+        "pyram", "skewb", "sq1", "444bf", "555bf", "333mbf"
+    ]
+    
+    # Como 'info' es plano, no tenemos 'personal_records' como dict.
+    # Usamos la lógica de claves dinámicas
     if not df.empty:
-        unique_events = df['Event'].unique()
-        # ordenamos unique_events según el orden de event_dict.keys()
+        user_events = df['Event'].unique().tolist()
+        
+        # Ordenamos
+        sorted_events = [ev for ev in WCA_ORDER if ev in user_events] + \
+                        [ev for ev in user_events if ev not in WCA_ORDER]
 
+        rank_rows = []
+        event_dict = getattr(fn, 'event_dict', {})
 
-        for ev_code in unique_events:
+        for ev_code in sorted_events:
             ev_name = event_dict.get(ev_code, ev_code)
             
-            # Función auxiliar para construir la clave plana
+            # Helper para sacar datos del JSON plano
             def get_val(code, type_, rank_type):
-                # Construye: personal_records.333.single.world_rank
                 key = f"personal_records.{code}.{type_}.{rank_type}"
                 return info.get(key, "-")
 
-            # Obtenemos los datos construyendo las claves dinámicamente
             s_world = get_val(ev_code, "single", "world_rank")
             s_cont = get_val(ev_code, "single", "continent_rank")
             s_country = get_val(ev_code, "single", "country_rank")
@@ -221,7 +271,7 @@ def render_summary_enhanced(data, wca_id):
             a_cont = get_val(ev_code, "average", "continent_rank")
             a_country = get_val(ev_code, "average", "country_rank")
             
-            # Solo añadimos si hay algún dato (evitamos filas vacías si no hay ranking)
+            # Solo añadir si hay algún dato
             if s_world != "-" or a_world != "-":
                 rank_rows.append({
                     "Event": ev_name,
@@ -229,24 +279,22 @@ def render_summary_enhanced(data, wca_id):
                     "NR (Avg)": a_country, "CR (Avg)": a_cont, "WR (Avg)": a_world
                 })
             
-    if rank_rows:
-        rdf = pd.DataFrame(rank_rows)
-        rdf = rdf.sort_values("Event")
-
-        st.dataframe(
-            rdf.set_index("Event"), 
-            use_container_width=True,
-            column_config={
+        if rank_rows:
+            rdf = pd.DataFrame(rank_rows)
+            st.dataframe(
+                rdf.set_index("Event"), 
+                use_container_width=True,
+                column_config={
                 "NR (Single)": st.column_config.NumberColumn("NR (Single)", format="%d"),
                 "CR (Single)": st.column_config.NumberColumn("CR (Single)", format="%d"),
                 "WR (Single)": st.column_config.NumberColumn("WR (Single)", format="%d"),
                 "NR (Avg)": st.column_config.NumberColumn("NR (Avg)", format="%d"),
                 "CR (Avg)": st.column_config.NumberColumn("CR (Avg)", format="%d"),
                 "WR (Avg)": st.column_config.NumberColumn("WR (Avg)", format="%d"),
-            }
-        )
-    else:
-        st.info("No ranking data available.")
+                }
+            )
+        else:
+            st.info("No ranking data available.")
 
 def render_competitions_tab(data):
     st.header("🌍 Competitions Hub")
@@ -723,8 +771,6 @@ def render_progression(data):
     st.plotly_chart(fig, use_container_width=True)
     st.caption(f"🔴 Red line: Your {type_sel} personal record history. ⚫ Grey dots: All official results.")
 
-
-# --- 5. LAYOUT PRINCIPAL ---
 
 # --- 5. LAYOUT PRINCIPAL ---
 
