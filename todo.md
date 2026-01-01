@@ -3,7 +3,7 @@
 ## 🚨 High Priority
 - [X] Records section in summary
 - [ ] Next competitions - figure out how to do this without taking a shit ton of time
-- [ ] Repair multi PRs, WCA formatting function is not made for this
+- [ ] Repair multi PRs, WCA formatting function is not made for this. Also add "s" after results?
 
 ## 🚀 Future Features
 - [ ] Add people that you've competed with before. Also needs high resources.
