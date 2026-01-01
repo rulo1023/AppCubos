@@ -300,7 +300,7 @@ def render_competitions_tab(data):
     st.header("🌍 Competitions Hub")
     
     # Creamos 3 pestañas
-    tab1, tab2, tab3 = st.tabs(["📜 History List", "🗺️ Travel Map", "🔥 Activity Heatmap"])
+    tab1, tab2, tab3 = st.tabs(["📜 History List", "🗺️ Travel Map", "🔥 Competition Heatmap"])
     
     with tab1:
         # Llamamos a tu función existente de lista
@@ -411,7 +411,7 @@ def render_statistics(data):
                     st.info("No PRs recorded yet.")
 
 def render_activity_heatmap(data):
-    st.header("🗓️ Activity Heatmap")
+    st.header("🗓️ Competition Heatmap")
     df = data["results"]
     if df.empty:
         st.warning("No data available.")
