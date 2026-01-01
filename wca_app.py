@@ -1,3 +1,5 @@
+### IMPORTS ###
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -6,10 +8,8 @@ import functions as fn
 import numpy as np
 import pydeck as pdk
 
-# --- 1. CONFIGURACIÓN INICIAL ---
-st.set_page_config(page_title="MyCubing Dashboard", layout="wide", page_icon="🎲")
 
-# --- ESTILOS CSS ---
+st.set_page_config(page_title="MyCubing Dashboard", layout="wide", page_icon="🎲")
 
 st.markdown("""
     <style>
@@ -49,29 +49,17 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 
-# Diccionario de Eventos
-event_dict = {
-    "333": "3x3x3", "222": "2x2x2", "444": "4x4x4", "555": "5x5x5", "666": "6x6x6", "777": "7x7x7",
-    "333bf": "3x3x3 Blind", "333oh": "3x3x3 OH", "333fm": "3x3x3 FM", "minx": "Megaminx", 
-    "pyram": "Pyraminx", "skewb": "Skewb", "sq1": "Square-1", "clock": "Clock", 
-    "444bf": "4x4x4 Blind", "555bf": "5x5x5 Blind", "333mbf": "3x3x3 Multi-Blind"
-}
-
-        # Diccionario auxiliar para tooltips (asegúrate de tenerlo definido o usa el ID directamente)
 event_dict = {
             "333": "3x3x3", "222": "2x2x2", "444": "4x4x4", 
             "555": "5x5x5", "666": "6x6x6", "777": "7x7x7", "333fm": "3x3x3 Fewest Moves",
             "333bf": "3x3x3 Blindfolded", "333oh": "3x3x3 One-Handed", 
             "minx": "Megaminx", "pyram": "Pyraminx", "skewb": "Skewb", 
-            "sq1": "Square-1", "clock": "Clock", "333ft": "3x3x3 With Feet",
-            "magic": "Magic", "mmagic": "Master Magic", "444bf": "4x4x4 Blindfolded",
-            "555bf": "5x5x5 Blindfolded",
-            "333mbf": "3x3x3 Multi-Blind"
+            "sq1": "Square-1", "clock": "Clock", "444bf": "4x4x4 Blindfolded",
+            "555bf": "5x5x5 Blindfolded", "333mbf": "3x3x3 Multi-Blind","333ft": "3x3x3 With Feet",
+            "magic": "Magic", "mmagic": "Master Magic",
         }
 
-
-
-# --- 2. HELPERS ---
+### HELPER FUNCTIONS ###
 def render_metric(label, value):
     with st.container(border=True):
         st.metric(label=label, value=value)
@@ -85,7 +73,7 @@ def render_pr_card(title, time_str, comp_name, date_str):
         <div class="pr-card-date">📅 {date_str}</div>
         <div style="height: 10px;"></div> """, unsafe_allow_html=True)
 
-# --- 3. CARGA DE DATOS ---
+### MAIN DATA LOADING FUNCTION ###
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_all_data(wca_id):
     try:
@@ -111,9 +99,8 @@ def load_all_data(wca_id):
         st.error(f"Error loading profile: {e}")
         return None
 
-# --- 4. VISTAS ---
-
-def render_summary(data, wca_id): # old version
+### RENDERING FUNCTIONS ###
+def render_summary(data, wca_id): # legacy version
     info = data["info"]
     iso_code = info.get('person.country.iso2', 'N/A')
     flag = fn.get_flag_emoji(iso_code)
@@ -208,7 +195,7 @@ def render_summary_enhanced(data, wca_id):
             st.caption(f"📅 {date_range_str}")
 
     # --- 3. NUEVAS TARJETAS DE RÉCORDS (Simplificado usando info) ---
-    # Obtenemos los datos directamente de las claves planas que me has pasado
+
     nr = info.get('records.national', 0)
     cr = info.get('records.continental', 0)
     wr = info.get('records.world', 0)
@@ -298,20 +285,16 @@ def render_summary_enhanced(data, wca_id):
 
 def render_competitions_tab(data):
     st.header("🌍 Competitions Hub")
-    
-    # Creamos 3 pestañas
+ 
     tab1, tab2, tab3 = st.tabs(["📜 History List", "🗺️ Travel Map", "🔥 Competition Heatmap"])
     
     with tab1:
-        # Llamamos a tu función existente de lista
         render_competition_list(data)
         
     with tab2:
-        # Llamamos a tu función existente de mapa
         render_competition_map(data)
         
     with tab3:
-        # Llamamos a tu función existente de heatmap
         render_activity_heatmap(data)
 
 def render_personal_bests_cards(data):
@@ -438,7 +421,7 @@ def render_activity_heatmap(data):
     fig.update_layout(xaxis_nticks=12, plot_bgcolor='rgba(0,0,0,0)')
     st.plotly_chart(fig, use_container_width=True)
 
-def render_competitions(data): # Antiguo render_competition_list
+def render_competitions(data): # Legacy
     st.header("🌍 Competitions History")
 
     df = data["results"].copy()
@@ -467,7 +450,7 @@ def render_competitions(data): # Antiguo render_competition_list
         comps['Events'] = comps['Event'].apply(get_event_icons_html)
 
         # Seleccionar columnas
-        final_view = comps[['Date', 'CompName', 'Location', 'Events']].rename(columns={'CompName': 'Competition'})
+        final_view = comps[['Date', 'CompName', 'Location', 'Events']].rename(columns={'CompName': 'Competition', 'Events': 'Events Participated', 'Location': 'Region'})
         
         # 3. Convertir a HTML
         table_html = final_view.to_html(index=False, escape=False)
@@ -586,11 +569,22 @@ def render_competition_list(data):
         comps['Date'] = comps['CompDate'].dt.strftime('%Y-%m-%d')
         comps['Location'] = comps['Country'].apply(lambda x: f"{fn.get_flag_emoji(x)} {fn.get_country_name(x)}")
     
+        # --- PREPARAR EL ORDEN CORRECTO ---
+        wca_order_keys = list(event_dict.keys())
 
         # 2. Generador de HTML con iconos
         def get_event_icons_html(event_list):
             html = '<div style="display: flex; flex-wrap: wrap; gap: 4px;">'
-            sorted_events = sorted(event_list)
+            
+            # ### CORRECCIÓN DE ORDEN ###
+            # Ordenamos usando el índice en la lista de claves de event_dict.
+            # Si un evento no está en el dict (raro), lo mandamos al final (999).
+            sorted_events = sorted(
+                event_list, 
+                key=lambda x: wca_order_keys.index(x) if x in wca_order_keys else 999
+            )
+            # ############################
+
             for ev in sorted_events:
                 icon_url = f"https://raw.githubusercontent.com/cubing/icons/main/src/svg/event/{ev}.svg"
                 html += f'<img src="{icon_url}" class="wca-icon" title="{event_dict.get(ev, ev)}">'
@@ -606,35 +600,29 @@ def render_competition_list(data):
         # --- CSS PARA EL SCROLL INTERNO Y ESTILO ---
         st.markdown("""
         <style>
-        /* Contenedor que limita la altura y permite el scroll */
         .wca-scroll-container {
-            max-height: 450px; /* Ajusta esta altura a tu gusto */
+            max-height: 450px; 
             overflow-y: auto;
             border: 1px solid rgba(49, 51, 63, 0.2);
             border-radius: 8px;
         }
-
-        /* Hacer que la cabecera se quede fija al hacer scroll (Sticky header) */
         .wca-table thead th {
             position: sticky;
             top: 0;
             z-index: 1;
-            background-color: #f0f2f6; /* Color de fondo de la cabecera */
+            background-color: #f0f2f6; 
         }
-
         .wca-table {
             width: 100%;
             border-collapse: collapse;
             font-family: sans-serif;
             font-size: 14px;
         }
-        
         .wca-table th, .wca-table td {
             padding: 12px;
             text-align: left;
             border-bottom: 1px solid #eee;
         }
-
         img.wca-icon {
             width: 22px !important;
             height: 22px !important;
@@ -644,10 +632,7 @@ def render_competition_list(data):
         </style>
         """, unsafe_allow_html=True)
 
-        # Inyectar clase y envolver en el div de scroll
         table_html = table_html.replace('<table border="1" class="dataframe">', '<table class="wca-table">')
-        
-        # Aquí envolvemos la tabla en el div con la clase wca-scroll-container
         st.markdown(f'<div class="wca-scroll-container">{table_html}</div>', unsafe_allow_html=True)
 
 def render_competition_map(data):
@@ -658,7 +643,7 @@ def render_competition_map(data):
         st.warning("No location data available to display the map.")
         return
 
-    # Lógica de Jitter para evitar solapamiento en la misma ciudad
+    # --- 1. Lógica de Jitter (Mantener para evitar solapamiento visual) ---
     map_df['pos_key'] = map_df['lat'].astype(str) + map_df['lon'].astype(str)
     metres_in_degrees = 0.000045 
     
@@ -672,25 +657,50 @@ def render_competition_map(data):
 
     map_df = map_df.groupby('pos_key', group_keys=False).apply(apply_jitter)
 
+    # --- 2. Lógica para encontrar el centro más denso (NUEVO) ---
+    # Creamos columnas temporales redondeando las coordenadas (aprox. 1 grado ~ 111km)
+    # Esto agrupa competiciones que ocurrieron en la misma región/ciudad grande.
+    map_df['lat_cluster'] = map_df['lat'].round(0)
+    map_df['lon_cluster'] = map_df['lon'].round(0)
+    
+    # Encontramos el cluster con más ocurrencias
+    if not map_df.empty:
+        # idxmax devuelve el índice (lat, lon) del grupo más grande
+        densest_region = map_df.groupby(['lat_cluster', 'lon_cluster']).size().idxmax()
+        center_lat, center_lon = densest_region
+        initial_zoom = 5  # Zoom más cercano (nivel país/región)
+    else:
+        # Fallback por si acaso
+        center_lat = map_df['lat'].mean()
+        center_lon = map_df['lon'].mean()
+        initial_zoom = 1.5
+
     view_state = pdk.ViewState(
-        latitude=map_df['lat'].mean(), longitude=map_df['lon'].mean(),
-        zoom=1.5, pitch=0
+        latitude=center_lat, 
+        longitude=center_lon,
+        zoom=initial_zoom, 
+        pitch=0
     )
     
+    # --- 3. Renderizado ---
     layer = pdk.Layer(
         "ScatterplotLayer", map_df,
-        get_position='[lon, lat]', get_color='[255, 75, 75, 200]',
-        radius_min_pixels=5, radius_max_pixels=15,
-        pickable=True, stroked=True,
-        line_width_min_pixels=1, get_line_color=[255, 255, 255]
+        get_position='[lon, lat]', 
+        get_color='[255, 75, 75, 200]',
+        radius_min_pixels=5, 
+        radius_max_pixels=15,
+        pickable=True, 
+        stroked=True,
+        line_width_min_pixels=1, 
+        get_line_color=[255, 255, 255]
     )
     
     st.pydeck_chart(pdk.Deck(
         map_style='https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-        initial_view_state=view_state, layers=[layer],
+        initial_view_state=view_state, 
+        layers=[layer],
         tooltip={"text": "{nombre}\n📅 {fecha}"}
     ))
-
 def render_progression(data):
     st.header("📈 Personal Best Progression")
     df = data["results"].copy()
@@ -772,22 +782,20 @@ def render_progression(data):
     st.caption(f"🔴 Red line: Your {type_sel} personal record history. ⚫ Grey dots: All official results.")
 
 
-# --- 5. LAYOUT PRINCIPAL ---
+####### STREAMLIT APP MAIN LOGIC ###########
 
 st.sidebar.title("🎲 MyCubing")
 wca_id_input = st.sidebar.text_input("WCA ID", placeholder="2016LOPE37").upper().strip()
 
-# Menú simplificado: ahora "Competitions" agrupa Lista, Mapa y Heatmap
 selection = st.sidebar.radio("Go to:", [
     "Summary", 
     "Personal Bests", 
-    "Competitions",      # <--- NUEVA PESTAÑA UNIFICADA
+    "Competitions",      
     "Statistics", 
     "Progression"
 ])
 
 if wca_id_input:
-    # Spinner informativo
     with st.spinner(f"Fetching data for {wca_id_input}... (This runs faster after the first load)"):
         data = load_all_data(wca_id_input)
 
@@ -799,7 +807,7 @@ if wca_id_input:
             render_personal_bests_cards(data)
             
         elif selection == "Competitions": 
-            render_competitions_tab(data)  # <--- Llamada a la nueva función
+            render_competitions_tab(data) 
             
         elif selection == "Statistics": 
             render_statistics(data)

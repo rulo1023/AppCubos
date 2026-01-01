@@ -60,6 +60,20 @@ def format_wca_time(cs, event_code=""):
     # Si es FMC, la media se guarda multiplicada por 100
     if event_code == "333fm":
         return f"{cs} moves" if cs < 1000 else f"{cs/100:.2f} moves" 
+    
+    if event_code == "333mbf":
+        # cs es el entero codificado (ej. 790321301)
+        missed = cs % 100                              # cubos fallados
+        time_seconds = (cs // 100) % 100000            # tiempo total en segundos
+        points = 99 - (cs // 10_000_000)               # puntos = solved - missed
+        solved = points + missed
+        attempted = solved + missed
+
+        minutes = time_seconds // 60
+        seconds = time_seconds % 60
+
+        return f"{solved}/{attempted} in {minutes}:{seconds:02d}"
+
 
     hundredths = cs % 100
     total_seconds = cs // 100
@@ -67,9 +81,9 @@ def format_wca_time(cs, event_code=""):
     minutes = total_seconds // 60
     
     if minutes > 0:
-        return f"{minutes}:{seconds:02d}.{hundredths:02d}"
+        return f"{minutes}:{seconds:02d}.{hundredths:02d}s"
     else:
-        return f"{seconds}.{hundredths:02d}"
+        return f"{seconds}.{hundredths:02d}s"
 
 def get_wca_results(wca_id):
     """
