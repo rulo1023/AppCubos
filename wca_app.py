@@ -122,30 +122,40 @@ def generate_scramble_image(puzzle_id, scramble_string, unique_filename):
     # Obtenemos el ID correcto para TNoodle, o usamos el original si no está en la lista
     tnoodle_id = tnoodle_mapping.get(puzzle_id, puzzle_id)
     
+    # DETECTAR SI ESTAMOS EN WINDOWS O LINUX/CLOUD
+    import platform
+    is_windows = platform.system() == "Windows"
+    
+    executable = "tnoodle.bat" if is_windows else "./tnoodle"
+    
+    # Construir el comando
+    # NOTA: En Linux es mejor usar la ruta absoluta al ejecutable para evitar problemas
+    if not is_windows:
+        executable = os.path.join(CLI_BIN_PATH, "tnoodle")
+        
     command = [
-        "tnoodle", 
+        executable, 
         "draw",
-        "--puzzle", tnoodle_id, # Usamos el ID traducido aquí
+        "--puzzle", tnoodle_id,
         "--scramble", scramble_string,
         "--output", full_output_path
     ]
     
     try:
-        # En Windows a veces 'tnoodle' es un .bat, shell=True ayuda a encontrarlo en el path
+        # En Linux/Cloud necesitamos asegurar permisos de ejecución primero
+        if not is_windows:
+            subprocess.run(["chmod", "+x", executable], check=False)
+
+        # EJECUCIÓN
+        # shell=False es más seguro y predecible en Linux cuando pasamos una lista
         result = subprocess.run(
             command, 
             capture_output=True, 
             text=True, 
-            shell=True, 
+            shell=is_windows,  # True solo en Windows
             cwd=CLI_BIN_PATH
         )
         
-        if result.returncode == 0:
-            return full_output_path
-        else:
-            # Si falla, mostramos el error pero no rompemos la app (devolvemos None)
-            st.error(f"Error tnoodle ({tnoodle_id}): {result.stderr}")
-            return None
     except Exception as e:
         st.error(f"Error ejecutando subproceso: {e}")
         return None
