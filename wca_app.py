@@ -419,7 +419,7 @@ def render_competitions_tab(data):
         render_activity_heatmap(data)
 
 def render_scrambles(data):
-    st.header("🧩 Scrambles Viewer (Tnoodle Local)")
+    st.header("🧩 Scrambles Viewer (Dummy, not real)")
     
     df = data["results"]
     if df.empty: return
@@ -1070,7 +1070,7 @@ def render_progression(data):
 
 def render_neighbours_tab(data):
     st.header("🤝 WCA Neighbours")
-    st.info("Descubre con quién has compartido más competiciones.")
+    st.info("Learn who you've competed the most with!")
 
     info = data.get('info', {})
     wca_id = info.get('person.wca_id') or info.get('id')
@@ -1091,14 +1091,14 @@ def render_neighbours_tab(data):
     col1, col2 = st.columns([1, 3])
     with col1:
         options = years
-        selected_year_opt = st.selectbox("📅 Selecciona año", options)
+        selected_year_opt = st.selectbox("📅 Select a year", options)
     
     # Preparamos el valor para enviar a la función (None si es "Todos")
     selected_year = None if selected_year_opt == "Todos" else selected_year_opt
 
     # Botón de acción
-    if st.button(f"Buscar Vecinos ({selected_year_opt})"):
-        with st.spinner(f"Analizando competiciones de {selected_year_opt}... (esto puede tomar un tiempo)"):
+    if st.button(f"Search neighbours ({selected_year_opt})"):
+        with st.spinner(f"Analyzing competitions from {selected_year_opt}... (this may take a while)"):
             # Pasamos 'results' y el 'year' a la función
             df_neigh = fn.get_wca_neighbours(wca_id, year=selected_year)
 
