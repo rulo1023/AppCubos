@@ -1101,7 +1101,7 @@ def render_neighbours_tab(data):
     if st.button(f"Buscar Vecinos ({selected_year_opt})"):
         with st.spinner(f"Analizando competiciones de {selected_year_opt}..."):
             # Pasamos 'results' y el 'year' a la función
-            df_neigh = fn.get_wca_neighbours(wca_id, results, year=selected_year)
+            df_neigh = fn.get_wca_neighbours(wca_id, year=selected_year)
 
         if df_neigh.empty:
             st.warning("No se encontraron coincidencias o hubo un error.")
