@@ -1090,8 +1090,7 @@ def render_neighbours_tab(data):
     
     col1, col2 = st.columns([1, 3])
     with col1:
-        # Añadimos la opción "Todos" al principio
-        options = ["Todos"] + years
+        options = years
         selected_year_opt = st.selectbox("📅 Selecciona año", options)
     
     # Preparamos el valor para enviar a la función (None si es "Todos")
@@ -1099,7 +1098,7 @@ def render_neighbours_tab(data):
 
     # Botón de acción
     if st.button(f"Buscar Vecinos ({selected_year_opt})"):
-        with st.spinner(f"Analizando competiciones de {selected_year_opt}..."):
+        with st.spinner(f"Analizando competiciones de {selected_year_opt}... (esto puede tomar un tiempo)"):
             # Pasamos 'results' y el 'year' a la función
             df_neigh = fn.get_wca_neighbours(wca_id, year=selected_year)
 

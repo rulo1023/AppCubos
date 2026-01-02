@@ -337,10 +337,12 @@ def get_heatmap_data(results_df):
     heatmap_df = df_unique_comps.groupby(['Year', 'Month']).size().reset_index(name='Count')
     return heatmap_df
 
-def get_wca_neighbours(wca_id, results_df):
+def get_wca_neighbours(wca_id, year):
     """
     Encuentra a las personas que han competido en las mismas competiciones que tú.
     """
+    results_df = get_wca_results(wca_id)
+
     if results_df.empty:
         return pd.DataFrame()
 
@@ -349,6 +351,9 @@ def get_wca_neighbours(wca_id, results_df):
     
     # 2. Función auxiliar para procesar UNA competición
     def process_comp(comp_id):
+        # if the comp_id does not end in the year, skip it
+        if not comp_id.endswith(str(year)):
+            return []
         try:
             data = get_comp_wcif_public(comp_id)
             if not data or 'persons' not in data:
