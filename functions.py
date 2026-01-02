@@ -398,7 +398,7 @@ def get_wca_neighbours(wca_id, results_df):
 
 # rapido para probar la funcion de info
 if __name__ == "__main__":
-    
+    wcaid = "2016lope37"
 
         
 
