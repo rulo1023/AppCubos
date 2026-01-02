@@ -9,6 +9,8 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import pycountry
 
+
+
 # --- CACHÉ GLOBAL ---
 COMP_CACHE = {}
 session = requests.Session()
@@ -17,15 +19,23 @@ adapter = requests.adapters.HTTPAdapter(pool_connections=100, pool_maxsize=100)
 session.mount('https://', adapter)
 
 def fetch_json(url):
-    """Helper to fetch JSON with error handling."""
+    """Helper to fetch JSON with error handling and User-Agent."""
     try:
-        response = session.get(url, timeout=5) # Timeout reducido para fallar rápido y no bloquear
+        # IMPORTANTE: La WCA bloquea peticiones sin User-Agent
+        headers = {
+            'User-Agent': 'MyCubingApp/1.0 (streamlit_app_viewer)'
+        }
+        # Timeout un poco más generoso para la API oficial
+        response = session.get(url, headers=headers, timeout=10) 
+        
         if response.status_code == 404:
             return None
+        # Si nos limitan (429), lanzamos error para saberlo (o podrías esperar y reintentar)
         response.raise_for_status()
         return response.json()
     except Exception as e:
-        # En producción podrías loguear esto, pero aquí silenciamos para velocidad
+        # Descomenta esto para depurar si sigue fallando
+        # print(f"Error fetching {url}: {e}")
         return None
 
 def get_comp_data(comp_id):
@@ -85,14 +95,11 @@ def format_wca_time(cs, event_code=""):
     else:
         return f"{seconds}.{hundredths:02d}s"
 
-def get_comp_wcif(comp_id):
+def get_comp_wcif_public(comp_id):
     """
-    Obtiene el WCIF público oficial de la WCA.
+    Obtiene los datos PÚBLICOS (incluye registro de personas) desde la web de WCA.
     """
-    # Usamos el endpoint oficial público
     url = f"https://www.worldcubeassociation.org/api/v0/competitions/{comp_id}/wcif/public"
-    
-    # Reutilizamos tu helper fetch_json que ya maneja errores y timeouts
     return fetch_json(url)
 
 def get_wca_results(wca_id):
@@ -330,11 +337,72 @@ def get_heatmap_data(results_df):
     heatmap_df = df_unique_comps.groupby(['Year', 'Month']).size().reset_index(name='Count')
     return heatmap_df
 
+def get_wca_neighbours(wca_id, results_df):
+    """
+    Encuentra a las personas que han competido en las mismas competiciones que tú.
+    """
+    if results_df.empty:
+        return pd.DataFrame()
+
+    # 1. Obtenemos la lista única de competiciones del usuario
+    my_comp_ids = results_df['Competition'].unique().tolist()
+    
+    # 2. Función auxiliar para procesar UNA competición
+    def process_comp(comp_id):
+        try:
+            data = get_comp_wcif_public(comp_id)
+            if not data or 'persons' not in data:
+                return []
+            
+            # Extraemos nombres de personas registradas
+            # Filtramos para asegurarnos que son competidores y no solo delegados vacíos
+            names = [p['name'] for p in data['persons'] if p.get('name')]
+            return names
+        except:
+            return []
+
+    all_names = []
+    
+    # 3. Ejecución paralela CONTROLADA
+    # IMPORTANTE: Bajar max_workers a 4 o 5. La API de WCA no soporta 20 concurrentes anónimos.
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        # map devuelve los resultados en orden
+        results_lists = list(executor.map(process_comp, my_comp_ids))
+        
+    for sublist in results_lists:
+        all_names.extend(sublist)
+
+    # 4. Eliminamos tu propio nombre
+    # Intentamos obtener tu nombre del primer resultado del DF para no hacer otra petición
+    if not results_df.empty:
+        # A veces el nombre está en rows, pero si no, obtenemos info
+        # Asumimos que ya tienes 'info' cargada fuera o la pedimos:
+        pass 
+        # (El filtrado exacto del nombre propio se puede hacer mejor por WCA ID si la API lo devuelve,
+        # pero el WCIF público devuelve nombres. Lo filtraremos por texto exacto si coincide)
+    
+    # Creamos DataFrame con el conteo
+    if not all_names:
+        return pd.DataFrame()
+
+    df_counts = pd.Series(all_names).value_counts().reset_index()
+    df_counts.columns = ['Name', 'Count']
+    
+    # Filtrar al propio usuario (si aparece con muchas competiciones, es él mismo)
+    # Una heurística simple: si tiene el mismo nº de competiciones que 'my_comp_ids', eres tú.
+    # O simplemente filtramos por el nombre si lo conocemos.
+    
+    # Retornamos el top 50 para no saturar la gráfica
+    return df_counts.head(50)
+
 
 # rapido para probar la funcion de info
 if __name__ == "__main__":
-    wcif_url = f'https://worldcubeassociation.org/api/v0/competitions/BasauriOpen2025/wcif/public'
-    wcif_data = fetch_json(wcif_url)
-    print(wcif_data)
+    
+
+        
+
+
+
     
 

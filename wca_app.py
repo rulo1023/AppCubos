@@ -50,6 +50,22 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+st.markdown("""
+<style>
+    /* Inversión de iconos SVG en modo oscuro */
+    @media (prefers-color-scheme: dark) {
+        img[src*=".svg"] {
+            filter: invert(1) brightness(2);
+        }
+        /* Mantenemos el fondo del cabecero claro para que el texto negro sea legible */
+        .wca-table thead th {
+            background-color: #e0e0e0 !important;
+            color: #000000 !important;
+        }
+        .wca-table td { color: white; }
+    }
+</style>
+""", unsafe_allow_html=True)
 
 event_dict = {
             "333": "3x3x3", "222": "2x2x2", "444": "4x4x4", 
@@ -67,7 +83,9 @@ def render_metric(label, value):
         st.metric(label=label, value=value)
 
 # --- CONFIGURACIÓN TNOODLE (AJUSTA TU RUTA AQUÍ) ---
-CLI_BIN_PATH = r"C:\Users\ruben\OneDrive\00Aprender\AppCubos\tnoodle\bin"
+# current working directory
+cd = os.getcwd()
+CLI_BIN_PATH = os.path.join(cd, "tnoodle", "bin")
 OUTPUT_FOLDER = os.path.join(os.getcwd(), "scramble_images")
 
 # Asegurar que existe la carpeta
@@ -601,6 +619,7 @@ def render_activity_heatmap(data):
         st.warning("No data available.")
         return
 
+    # Preparar datos
     heatmap_data = fn.get_heatmap_data(df)
     pivot_df = heatmap_data.pivot(index='Year', columns='Month', values='Count').fillna(0)
     
@@ -610,16 +629,48 @@ def render_activity_heatmap(data):
     pivot_df = pivot_df[sorted(pivot_df.columns)]
     month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
+    # 1. Selector de escala de colores
+    colores_dict = {
+        "Azules 🔵": "Blues",
+        "Rojos 🔴": "Reds",
+        "Verdes 🟢": "Greens",
+        "Morados 🟣": "Purples",
+        "Naranja y Sol ☀️": "YlOrRd",
+        "Glaciar ❄️": "Ice",
+        "Viridis (Pro) 🌈": "Viridis"
+    }
+    
+    col_selector, _ = st.columns([1, 2])
+    with col_selector:
+        seleccion = st.selectbox("Elige el estilo del mapa:", list(colores_dict.keys()), index=0)
+    
+    escala_elegida = colores_dict[seleccion]
+
+    # 2. Cálculo de altura dinámica
+    # Base de 150px + 35px por cada año en el índice
+    num_years = len(pivot_df.index)
+    dynamic_height = 150 + (num_years * 35)
+
+    # 3. Creación del gráfico
     fig = go.Figure(data=go.Heatmap(
         z=pivot_df.values,
         x=month_names,
-        y=pivot_df.index.astype(str), # Forzamos string para el orden correcto en el eje Y
-        colorscale='Reds',
-        xgap=3, ygap=3,
-        hovertemplate='Year: %{y}<br>Month: %{x}<br>Comps: %{z}<extra></extra>'
+        y=pivot_df.index.astype(str),
+        colorscale=escala_elegida,
+        xgap=3, 
+        ygap=3,
+        hovertemplate='<b>Año %{y}</b><br>Mes: %{x}<br>Competiciones: %{z}<extra></extra>'
     ))
 
-    fig.update_layout(xaxis_nticks=12, plot_bgcolor='rgba(0,0,0,0)')
+    fig.update_layout(
+        height=dynamic_height, # Aplicamos la altura calculada
+        xaxis_nticks=12, 
+        xaxis=dict(side="top"), # Meses arriba para mejor lectura
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        margin=dict(l=10, r=10, t=40, b=10),
+    )
+
     st.plotly_chart(fig, use_container_width=True)
 
 def render_competitions(data): # Legacy
@@ -802,37 +853,68 @@ def render_competition_list(data):
         st.markdown("""
         <style>
         .wca-scroll-container {
+            width: 100%;
+            overflow-x: auto; /* Permite scroll horizontal en móviles */
             max-height: 450px; 
             overflow-y: auto;
             border: 1px solid rgba(49, 51, 63, 0.2);
             border-radius: 8px;
         }
-        .wca-table thead th {
-            position: sticky;
-            top: 0;
-            z-index: 1;
-            background-color: #f0f2f6; 
-        }
+
         .wca-table {
             width: 100%;
+            min-width: 600px; /* Evita que las columnas se colapsen en pantallas pequeñas */
             border-collapse: collapse;
             font-family: sans-serif;
             font-size: 14px;
         }
-        .wca-table th, .wca-table td {
+
+        /* Estilo para los Cabeceros */
+        .wca-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background-color: #e0e0e0; /* Gris claro para destacar */
+            color: #000000 !important; /* Texto negro forzado */
+            font-weight: bold;
             padding: 12px;
             text-align: left;
-            border-bottom: 1px solid #eee;
+            border-bottom: 2px solid #ccc;
         }
+
+        .wca-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+        }
+
+        /* Ajuste de Iconos para Modo Oscuro */
         img.wca-icon {
             width: 22px !important;
             height: 22px !important;
             object-fit: contain;
             display: inline-block !important;
+            filter: none;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            /* Invierte los iconos WCA de negro a blanco en modo oscuro */
+            img.wca-icon {
+                filter: invert(1) brightness(2);
+            }
+            /* Mantiene el cabecero legible en modo oscuro */
+            .wca-table thead th {
+                background-color: #cccccc; 
+                color: #000000 !important;
+            }
+            .wca-table td {
+                color: #ffffff;
+            }
         }
         </style>
         """, unsafe_allow_html=True)
 
+        table_html = final_view.to_html(index=False, escape=False)
         table_html = table_html.replace('<table border="1" class="dataframe">', '<table class="wca-table">')
         st.markdown(f'<div class="wca-scroll-container">{table_html}</div>', unsafe_allow_html=True)
 
@@ -982,6 +1064,71 @@ def render_progression(data):
     st.plotly_chart(fig, use_container_width=True)
     st.caption(f"🔴 Red line: Your {type_sel} personal record history. ⚫ Grey dots: All official results.")
 
+# En wca_app.py
+
+# En wca_app.py
+
+def render_neighbours_tab(data):
+    st.header("🤝 WCA Neighbours")
+    st.info("Descubre con quién has compartido más competiciones.")
+
+    info = data.get('info', {})
+    wca_id = info.get('person.wca_id') or info.get('id')
+    my_name = info.get('person.name') or info.get('name')
+    results = data.get('results', pd.DataFrame())
+
+    if not wca_id or results.empty:
+        st.error("No hay datos suficientes para calcular vecinos.")
+        return
+
+    # --- NUEVO: Selector de Año ---
+    # Extraemos los años únicos de las competiciones
+    if 'CompDate' in results.columns and pd.api.types.is_datetime64_any_dtype(results['CompDate']):
+        years = sorted(results['CompDate'].dt.year.unique().astype(int), reverse=True)
+    else:
+        years = []
+    
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        # Añadimos la opción "Todos" al principio
+        options = ["Todos"] + years
+        selected_year_opt = st.selectbox("📅 Selecciona año", options)
+    
+    # Preparamos el valor para enviar a la función (None si es "Todos")
+    selected_year = None if selected_year_opt == "Todos" else selected_year_opt
+
+    # Botón de acción
+    if st.button(f"Buscar Vecinos ({selected_year_opt})"):
+        with st.spinner(f"Analizando competiciones de {selected_year_opt}..."):
+            # Pasamos 'results' y el 'year' a la función
+            df_neigh = fn.get_wca_neighbours(wca_id, results, year=selected_year)
+
+        if df_neigh.empty:
+            st.warning("No se encontraron coincidencias o hubo un error.")
+            return
+
+        if my_name:
+            df_neigh = df_neigh[df_neigh['Name'] != my_name]
+
+        st.subheader(f"Top coincidencia en {selected_year_opt}")
+        
+        # Gráfico
+        fig = px.bar(
+            df_neigh.head(15), 
+            x='Count', 
+            y='Name', 
+            orientation='h',
+            text='Count',
+            title=f"Coincidencias ({selected_year_opt})",
+            color='Count',
+            color_continuous_scale='Viridis'
+        )
+        fig.update_layout(yaxis={'categoryorder':'total ascending'})
+        st.plotly_chart(fig, use_container_width=True)
+
+        with st.expander("Ver lista completa"):
+            st.dataframe(df_neigh, use_container_width=True)
+
 
 ####### STREAMLIT APP MAIN LOGIC ###########
 
@@ -994,7 +1141,8 @@ selection = st.sidebar.radio("Go to:", [
     "Competitions",      
     "Statistics", 
     "Progression",
-    "Scrambles"
+    "Scrambles",
+    "WCA Neighbours"
 ])
 
 if wca_id_input:
@@ -1019,6 +1167,9 @@ if wca_id_input:
 
         elif selection == "Scrambles":
             render_scrambles(data)
+
+        elif selection == "WCA Neighbours":
+            render_neighbours_tab(data)
 
         # Footer sidebar con nombre
         name = data['info'].get('person.name', wca_id_input)
