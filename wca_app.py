@@ -7,6 +7,8 @@ import plotly.graph_objects as go
 import functions as fn
 import numpy as np
 import pydeck as pdk
+import subprocess 
+import os          
 
 
 st.set_page_config(page_title="MyCubing Dashboard", layout="wide", page_icon="🎲")
@@ -63,6 +65,55 @@ event_dict = {
 def render_metric(label, value):
     with st.container(border=True):
         st.metric(label=label, value=value)
+
+# --- CONFIGURACIÓN TNOODLE (AJUSTA TU RUTA AQUÍ) ---
+CLI_BIN_PATH = r"C:\Users\ruben\OneDrive\00Aprender\AppCubos\tnoodle\bin"
+OUTPUT_FOLDER = os.path.join(os.getcwd(), "scramble_images")
+
+# Asegurar que existe la carpeta
+if not os.path.exists(OUTPUT_FOLDER):
+    os.makedirs(OUTPUT_FOLDER)
+
+def generate_scramble_image(puzzle_id, scramble_string, unique_filename):
+    """
+    Genera la imagen usando tnoodle localmente.
+    Devuelve la ruta completa de la imagen.
+    """
+    full_output_path = os.path.join(OUTPUT_FOLDER, unique_filename)
+    
+    # OPTIMIZACIÓN: Si la imagen ya existe, no la regeneramos para no bloquear la app
+    if os.path.exists(full_output_path):
+        return full_output_path
+
+    # Mapeo básico de ids de WCA a tnoodle si fuera necesario
+    # (tnoodle suele usar '333', '222', etc., igual que tu app, pero 'pyram' -> 'minx' a veces varía)
+    # Por ahora pasamos el id directo.
+    
+    command = [
+        "tnoodle", 
+        "draw",
+        "--puzzle", puzzle_id,
+        "--scramble", scramble_string,
+        "--output", full_output_path
+    ]
+    
+    try:
+        result = subprocess.run(
+            command, 
+            capture_output=True, 
+            text=True, 
+            shell=True, 
+            cwd=CLI_BIN_PATH
+        )
+        
+        if result.returncode == 0:
+            return full_output_path
+        else:
+            st.error(f"Error tnoodle: {result.stderr}")
+            return None
+    except Exception as e:
+        st.error(f"Error ejecutando subproceso: {e}")
+        return None
 
 def render_pr_card(title, time_str, comp_name, date_str):
     with st.container(border=True):
@@ -348,6 +399,94 @@ def render_competitions_tab(data):
         
     with tab3:
         render_activity_heatmap(data)
+
+def render_scrambles(data):
+    st.header("🧩 Scrambles Viewer (Tnoodle Local)")
+    
+    df = data["results"]
+    if df.empty: return
+
+    # --- 1. Selectores ---
+    comps_df = df[['CompName', 'CompDate']].drop_duplicates().sort_values(by='CompDate', ascending=False)
+    selected_comp_name = st.selectbox("Select Competition:", comps_df['CompName'])
+    
+    if not selected_comp_name: return
+
+    comp_specific_df = df[df['CompName'] == selected_comp_name]
+    comp_events_codes = comp_specific_df['Event'].unique()
+    event_options = {event_dict.get(code, code): code for code in comp_events_codes}
+    
+    selected_event_name = st.selectbox("Select Event:", list(event_options.keys()))
+    selected_event_code = event_options[selected_event_name] # ej: '333', '222'
+
+    # valid names for events two, three, four, four_fast, five, six, seven, three_ni, four_ni, five_ni, three_fm, pyra, sq1, mega, clock, skewb
+    # do a dict and change the selected_event_code
+    event_code_mapping = {
+        '333': 'three',
+        '222': 'two',
+        '444': 'four',
+        '555': 'five',
+        '666': 'six',
+        '333oh': 'three',
+        '777': 'seven',
+        '333bf': 'three_ni',
+        '444bf': 'four_ni',
+        '555bf': 'five_ni',
+        '333fm': 'three_fm',
+        'pyram': 'pyra',
+        'sq1': 'sq1',
+        'minx': 'mega',
+        'clock': 'clock',
+        'skewb': 'skewb'
+    }
+    
+    selected_event_code = event_code_mapping.get(selected_event_code, selected_event_code)
+
+    st.divider()
+
+    # --- 2. Datos Dummy para Sets A y B ---
+    # En el futuro, esto vendrá de una base de datos o lógica real
+    dummy_scrambles = ["D' R' U' R B2 U2 L D' F' R2 F2 B R2 D2 F R2 B' R2 D2 L ",
+                        "F2 B R D' R' U2 L' F2 L2 F' D2 R2 B' U2 F2 U2 D2 L2 B L",
+                        "F D' L' U' F2 R D' B' L U' L2 U' B2 R2 U L2 D2 R2 U L2 ",
+                        "B' D' L2 U' L2 U' R2 D U B2 U B2 F2 L' R2 D R2 D' B U' R2 ",
+                        "U' F' D2 R2 B2 U' L2 R2 U R2 U2 F2 R2 U2 F' L' B' D R U2 B2 "] 
+
+    # --- 3. Función de renderizado por filas ---
+    def render_set_rows(set_label, scrambles_list):
+        with st.container(border=True):
+            st.subheader(f"📂 {set_label}")
+            
+            for i, scram in enumerate(scrambles_list):
+                # Crear nombre de archivo único para evitar colisiones
+                # ej: 333_SetA_1.svg
+                filename = f"{selected_event_code}_{set_label}_{i+1}.svg"
+                
+                # Generar imagen
+                img_path = generate_scramble_image(selected_event_code, scram, filename)
+                
+                # --- DISEÑO EN FILA (ROW) ---
+                # Columna 1 pequeña (Imagen), Columna 2 grande (Texto)
+                c_img, c_text = st.columns([1, 4]) 
+                
+                with c_img:
+                    if img_path and os.path.exists(img_path):
+                        st.image(img_path, width=150)
+                    else:
+                        st.warning("Img fail")
+                
+                with c_text:
+                    st.markdown(f"**{i+1}.**")
+                    # Usamos st.code para que sea fácil de copiar y leer
+                    st.code(scram, language=None)
+                
+                # Separador sutil entre mezclas
+                if i < len(scrambles_list) - 1:
+                    st.markdown("<hr style='margin: 5px 0; opacity: 0.3;'>", unsafe_allow_html=True)
+
+    # Renderizamos los sets
+    render_set_rows("Set A", dummy_scrambles)
+    render_set_rows("Set B", dummy_scrambles)
 
 def render_personal_bests_cards(data):
     st.header("🏆 Personal Bests")
@@ -845,7 +984,8 @@ selection = st.sidebar.radio("Go to:", [
     "Personal Bests", 
     "Competitions",      
     "Statistics", 
-    "Progression"
+    "Progression",
+    "Scrambles"
 ])
 
 if wca_id_input:
@@ -867,6 +1007,9 @@ if wca_id_input:
             
         elif selection == "Progression": 
             render_progression(data)
+
+        elif selection == "Scrambles":
+            render_scrambles(data)
 
         # Footer sidebar con nombre
         name = data['info'].get('person.name', wca_id_input)
