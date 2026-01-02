@@ -437,7 +437,13 @@ def render_competitions_tab(data):
 
 def render_scrambles(data):
     st.header("🔀 Scrambles from your competitions")
-    
+
+    twizzle_puzzle_map = {
+    '333': '3x3x3', '222': '2x2x2', '444': '4x4x4', '555': '5x5x5', '666': '6x6x6', '777': '7x7x7',
+    '333oh': '3x3x3', '333bf': '3x3x3', '333fm': '3x3x3',
+    'minx': 'megaminx', 'pyram': 'pyraminx', 'skewb': 'skewb', 'clock': 'clock', 'sq1': 'square1',
+    '444bf': '4x4x4', '555bf': '5x5x5', '333mbf': '3x3x3'
+}
     df = data["results"]
     if df.empty: return
 
@@ -474,7 +480,7 @@ def render_scrambles(data):
         # Rondas disponibles para ese evento
         available_rounds = list(scramble_data[selected_event_code].keys())
         # Mapeo simple para nombres de ronda (d, 1, 2, 3, f...)
-        round_map = {'1': 'Round 1', '2': 'Round 2', '3': 'Round 3', 'f': 'Final', 'c': 'Combined', 'd': 'Qual. Round'}
+        round_map = {'1': 'First Round', '2': 'Second Round', '3': 'Semi-final', 'f': 'Final', 'c': 'Combined Final', 'd': 'Combined First Round'}
         round_options = {round_map.get(r, f"Round {r}"): r for r in available_rounds}
         
         selected_round_name = st.selectbox("Select Round:", list(round_options.keys()))
@@ -488,35 +494,77 @@ def render_scrambles(data):
         '333': 'three', '222': 'two', '444': 'four', '555': 'five', '666': 'six', '777': 'seven',
         '333oh': 'three', '333bf': 'three_ni', '444bf': 'four_ni', '555bf': 'five_ni',
         '333fm': 'three_fm', 'pyram': 'pyra', 'sq1': 'sq1', 'minx': 'mega', 
-        'clock': 'clock', 'skewb': 'skewb'
+        'clock': 'clock', 'skewb': 'skewb', '333mbf': 'three_ni'
     }
     tnoodle_event = tnoodle_code_mapping.get(selected_event_code, selected_event_code)
 
     st.divider()
 
     # --- 4. Renderizado Dinámico de Grupos ---
-    # Iteramos sobre los grupos ordenados alfabéticamente (A, B, C...)
+    # Creamos un diccionario nuevo para manejar los grupos reales y los virtuales
+    processed_groups = {}
+
     for group_id in sorted(groups_data.keys()):
         scramble_list = groups_data[group_id]
         
-        with st.container(border=True):
-            st.subheader(f"📂 Group {group_id}")
+        if selected_event_code == '333mbf':
+            # Lógica para separar el Grupo A en subgrupos (A.1, A.2...)
+            current_subgroup_idx = 1
+            last_num = -1
             
             for item in scramble_list:
+                scrambles_split = item['scramble'].split('\n')
+                for sub_idx, scram in enumerate(scrambles_split):
+                    current_num = sub_idx + 1
+                    
+                    # Si detectamos un reinicio (ej: pasamos de 33 a 1)
+                    if current_num <= last_num:
+                        current_subgroup_idx += 1
+                    
+                    # Creamos el nombre del grupo virtual: "A.1", "A.2", etc.
+                    virtual_group_id = f"{group_id}.{current_subgroup_idx}"
+                    
+                    if virtual_group_id not in processed_groups:
+                        processed_groups[virtual_group_id] = []
+                    
+                    processed_groups[virtual_group_id].append({
+                        'num': current_num,
+                        'scramble': scram,
+                        'is_extra': False
+                    })
+                    last_num = current_num
+        else:
+            # Para eventos normales, mantenemos el grupo tal cual
+            processed_groups[group_id] = scramble_list
+
+    # --- RENDERIZADO FINAL ---
+    for g_id in sorted(processed_groups.keys()):
+        current_scrambles = processed_groups[g_id]
+        
+        with st.container(border=True):
+            st.subheader(f"📂 Group {g_id}")
+            
+            for item in current_scrambles:
                 num = item['num']
                 scram_str = item['scramble']
                 is_extra = item['is_extra']
-                
-                # Etiqueta: 1, 2, 3... o E1, E2...
                 label_num = f"E{num}" if is_extra else f"{num}"
                 
-                # Nombre de archivo único
-                filename = f"{selected_event_code}_{selected_round_code}_{group_id}_{label_num}.svg"
+                # 1. Generar URL de Twizzle
+                puzzle_name = twizzle_puzzle_map.get(selected_event_code, '3x3x3')
+                # Limpiamos saltos de línea y formateamos para URL
+                clean_scram = scram_str.replace('\n', ' ').replace(' ', '+').replace("'", "%27")
+                twizzle_url = f"https://alpha.twizzle.net/edit/?setup-alg={clean_scram}&puzzle={puzzle_name}"
                 
-                # Generar imagen (tu función existente)
-                img_path = generate_scramble_image(selected_event_code, scram_str, filename)
+                # 2. Generar imagen (tu lógica existente)
+                filename = f"{selected_event_code}_{selected_round_code}_{g_id}_{label_num}.svg"
+                if selected_event_code == 'minx':
+                    scram_str_mod = scram_str.replace('\n', ' ')
+                    img_path = generate_scramble_image(selected_event_code, scram_str_mod, filename)
+                else:
+                    img_path = generate_scramble_image(selected_event_code, scram_str, filename)
                 
-                # Layout de Fila
+                # 3. Layout de Fila
                 c_img, c_text = st.columns([1, 4]) 
                 
                 with c_img:
@@ -526,11 +574,18 @@ def render_scrambles(data):
                         st.warning("Img error")
                 
                 with c_text:
-                    st.markdown(f"**{label_num}.**")
+                    # Título y botón de Twizzle en la misma línea
+                    col_t1, col_t2 = st.columns([1, 4])
+                    with col_t1:
+                        st.markdown(f"**{label_num}.**")
+                    with col_t2:
+                        st.markdown(f'<a href="{twizzle_url}" target="_blank" style="text-decoration:none;">'
+                                    f'<button style="font-size:10px; cursor:pointer; border-radius:5px; border:1px solid #ddd;">'
+                                    f'🌐 View in Twizzle</button></a>', unsafe_allow_html=True)
+                    
                     st.code(scram_str, language=None)
                 
-                # Separador visual entre mezclas
-                if item != scramble_list[-1]:
+                if item != current_scrambles[-1]:
                     st.markdown("<hr style='margin: 5px 0; opacity: 0.1;'>", unsafe_allow_html=True)
 
 def render_personal_bests_cards(data):
@@ -1129,7 +1184,7 @@ def render_neighbours_tab(data):
                     # Limitar a los 20 primeros para no saturar la interfaz
                     if current_rank > 23: # 3 del podio + 20 extras
                         break
-                    
+
         st.download_button(
             "Download complete list (CSV)",
             df_neigh.to_csv(index=False),
