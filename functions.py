@@ -320,7 +320,6 @@ def get_country_name(code):
     except:
         return code
     
-
 def get_heatmap_data(results_df):
     """Prepara los datos para el heatmap de actividad anual/mensual."""
     if results_df.empty:
@@ -338,72 +337,113 @@ def get_heatmap_data(results_df):
     return heatmap_df
 
 def get_wca_neighbours(wca_id, year):
-    """
-    Encuentra a las personas que han competido en las mismas competiciones que tú.
-    """
     results_df = get_wca_results(wca_id)
-
     if results_df.empty:
         return pd.DataFrame()
 
-    # 1. Obtenemos la lista única de competiciones del usuario
-    my_comp_ids = results_df['Competition'].unique().tolist()
+    # 1. Obtenemos las IDs únicas de las competiciones
+    all_comp_ids = results_df['Competition'].unique().tolist()
     
-    # 2. Función auxiliar para procesar UNA competición
+    if year and year != "Todos":
+        year_str = str(year).strip()
+        # Filtramos solo las que TERMINAN exactamente en el año seleccionado
+        # Esto evita errores si el año aparece en medio por casualidad
+        my_comp_ids = [c for c in all_comp_ids if str(c).endswith(year_str)]
+    else:
+        my_comp_ids = all_comp_ids
+
+    if not my_comp_ids:
+        # Si no encuentra nada por el ID, intentamos por la fecha (backup de seguridad)
+        if year and year != "Todos":
+            results_year = results_df[results_df['CompDate'].dt.year == int(year)]
+            my_comp_ids = results_year['Competition'].unique().tolist()
+        
+        # Si después del backup sigue vacío, salimos
+        if not my_comp_ids:
+            return pd.DataFrame()
+
     def process_comp(comp_id):
-        # if the comp_id does not end in the year, skip it
-        if not comp_id.endswith(str(year)):
-            return []
-        try:
-            data = get_comp_wcif_public(comp_id)
-            if not data or 'persons' not in data:
-                return []
-            
-            # Extraemos nombres de personas registradas
-            # Filtramos para asegurarnos que son competidores y no solo delegados vacíos
-            names = [p['name'] for p in data['persons'] if p.get('name')]
-            return names
-        except:
-            return []
+        # Endpoint de competidores
+        url = f"https://www.worldcubeassociation.org/api/v0/competitions/{comp_id}/competitors"
+        data = fetch_json(url)
+        
+        if isinstance(data, list):
+            # Extraemos nombres, saltando tu WCA ID
+            return [person['name'] for person in data if person.get('wca_id') != wca_id]
+        return []
 
     all_names = []
-    
-    # 3. Ejecución paralela CONTROLADA
-    # IMPORTANTE: Bajar max_workers a 4 o 5. La API de WCA no soporta 20 concurrentes anónimos.
+    # Paralelismo para velocidad
     with ThreadPoolExecutor(max_workers=5) as executor:
-        # map devuelve los resultados en orden
         results_lists = list(executor.map(process_comp, my_comp_ids))
         
     for sublist in results_lists:
         all_names.extend(sublist)
 
-    # 4. Eliminamos tu propio nombre
-    # Intentamos obtener tu nombre del primer resultado del DF para no hacer otra petición
-    if not results_df.empty:
-        # A veces el nombre está en rows, pero si no, obtenemos info
-        # Asumimos que ya tienes 'info' cargada fuera o la pedimos:
-        pass 
-        # (El filtrado exacto del nombre propio se puede hacer mejor por WCA ID si la API lo devuelve,
-        # pero el WCIF público devuelve nombres. Lo filtraremos por texto exacto si coincide)
-    
-    # Creamos DataFrame con el conteo
     if not all_names:
         return pd.DataFrame()
 
+    # Contar y limpiar
     df_counts = pd.Series(all_names).value_counts().reset_index()
     df_counts.columns = ['Name', 'Count']
     
-    # Filtrar al propio usuario (si aparece con muchas competiciones, es él mismo)
-    # Una heurística simple: si tiene el mismo nº de competiciones que 'my_comp_ids', eres tú.
-    # O simplemente filtramos por el nombre si lo conocemos.
-    
-    # Retornamos el top 50 para no saturar la gráfica
     return df_counts.head(50)
 
+def get_scrambles(comp_id):
+    """
+    Obtiene y estructura los scrambles de una competición.
+    Estructura de retorno:
+    {
+        "333": {
+            "1": { "A": [ {scramble_obj}, ... ], "B": [...] },
+            "f": { "A": [...] }
+        },
+        ...
+    }
+    """
+    url = f"https://www.worldcubeassociation.org/api/v0/competitions/{comp_id}/scrambles"
+    raw_data = fetch_json(url)
+    
+    if not raw_data:
+        return {}
+
+    structured_data = {}
+
+    for item in raw_data:
+        ev_id = item['event_id']
+        rnd_id = item['round_type_id']
+        grp_id = item['group_id']
+        
+        # Inicializar estructura anidada si no existe
+        if ev_id not in structured_data:
+            structured_data[ev_id] = {}
+        if rnd_id not in structured_data[ev_id]:
+            structured_data[ev_id][rnd_id] = {}
+        if grp_id not in structured_data[ev_id][rnd_id]:
+            structured_data[ev_id][rnd_id][grp_id] = []
+        
+        # Limpiamos el objeto para quedarnos solo con lo útil
+        scramble_obj = {
+            "num": item['scramble_num'],
+            "scramble": item['scramble'],
+            "is_extra": item['is_extra'],
+            "id": item['id']
+        }
+        structured_data[ev_id][rnd_id][grp_id].append(scramble_obj)
+
+    # Ordenar las listas: Primero los NO extra, luego por número
+    for ev in structured_data:
+        for rnd in structured_data[ev]:
+            for grp in structured_data[ev][rnd]:
+                # Ordena por (es_extra, numero). False(0) va antes que True(1)
+                structured_data[ev][rnd][grp].sort(key=lambda x: (x['is_extra'], x['num']))
+
+    return structured_data
 
 # rapido para probar la funcion de info
 if __name__ == "__main__":
-    wcaid = "2016lope37"
+    wcaid = "2016LOPE37"
+
 
         
 

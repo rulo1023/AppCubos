@@ -47,12 +47,7 @@ st.markdown("""
     @media (min-width: 768px) {
         [data-testid="column"] { min-width: 20% !important; flex: 1 1 20% !important; }
     }
-    </style>
-    """, unsafe_allow_html=True)
-
-st.markdown("""
-<style>
-    /* Inversión de iconos SVG en modo oscuro */
+     /* Inversión de iconos SVG en modo oscuro */
     @media (prefers-color-scheme: dark) {
         img[src*=".svg"] {
             filter: invert(1) brightness(2);
@@ -64,8 +59,10 @@ st.markdown("""
         }
         .wca-table td { color: white; }
     }
-</style>
-""", unsafe_allow_html=True)
+    </style>
+    """, unsafe_allow_html=True)
+
+# This is defined to use later, as we will be working with event codes but want to show names.
 
 event_dict = {
             "333": "3x3x3", "222": "2x2x2", "444": "4x4x4", 
@@ -75,47 +72,66 @@ event_dict = {
             "sq1": "Square-1", "clock": "Clock", "444bf": "4x4x4 Blindfolded",
             "555bf": "5x5x5 Blindfolded", "333mbf": "3x3x3 Multi-Blind","333ft": "3x3x3 With Feet",
             "magic": "Magic", "mmagic": "Master Magic",
-        }
+        } 
 
 ### HELPER FUNCTIONS ###
 def render_metric(label, value):
     with st.container(border=True):
         st.metric(label=label, value=value)
 
-# --- CONFIGURACIÓN TNOODLE (AJUSTA TU RUTA AQUÍ) ---
-# current working directory
+# Configure Tnoodle for scramble image generation
 cd = os.getcwd()
 CLI_BIN_PATH = os.path.join(cd, "tnoodle", "bin")
 OUTPUT_FOLDER = os.path.join(os.getcwd(), "scramble_images")
 
-# Asegurar que existe la carpeta
 if not os.path.exists(OUTPUT_FOLDER):
     os.makedirs(OUTPUT_FOLDER)
 
 def generate_scramble_image(puzzle_id, scramble_string, unique_filename):
     """
     Genera la imagen usando tnoodle localmente.
-    Devuelve la ruta completa de la imagen.
+    Traduce automáticamente los IDs de WCA (222, minx) a los de TNoodle (two, mega).
     """
     full_output_path = os.path.join(OUTPUT_FOLDER, unique_filename)
     
-    # OPTIMIZACIÓN: Si la imagen ya existe, no la regeneramos para no bloquear la app
+    # OPTIMIZACIÓN: Si la imagen ya existe, no la regeneramos
     if os.path.exists(full_output_path):
         return full_output_path
 
-    # Mapeo básico de ids de WCA a tnoodle si fuera necesario
-    # (tnoodle suele usar '333', '222', etc., igual que tu app, pero 'pyram' -> 'minx' a veces varía)
-    # Por ahora pasamos el id directo.
+    # --- MAPEO CRÍTICO WCA -> TNOODLE ---
+    tnoodle_mapping = {
+        '333': 'three', 
+        '222': 'two', 
+        '444': 'four', 
+        '555': 'five', 
+        '666': 'six', 
+        '777': 'seven',
+        '333bf': 'three_ni',    # Blindfolded (No Inspection)
+        '333fm': 'three_fm',    # Fewest Moves
+        '333oh': 'three',       # OH usa el mismo cubo 3x3
+        'minx': 'mega',         # Megaminx
+        'pyram': 'pyra',        # Pyraminx
+        'skewb': 'skewb', 
+        'sq1': 'sq1', 
+        'clock': 'clock', 
+        '444bf': 'four_ni',
+        '555bf': 'five_ni',
+        '333mbf': 'three_ni'    # Multi-blind usa cubos 3x3
+    }
+
+    # Obtenemos el ID correcto para TNoodle, o usamos el original si no está en la lista
+    tnoodle_id = tnoodle_mapping.get(puzzle_id, puzzle_id)
     
     command = [
         "tnoodle", 
         "draw",
-        "--puzzle", puzzle_id,
+        "--puzzle", tnoodle_id, # Usamos el ID traducido aquí
         "--scramble", scramble_string,
         "--output", full_output_path
     ]
     
     try:
+        # En Windows a veces 'tnoodle' es un .bat, shell=True ayuda a encontrarlo en el path
         result = subprocess.run(
             command, 
             capture_output=True, 
@@ -127,7 +143,8 @@ def generate_scramble_image(puzzle_id, scramble_string, unique_filename):
         if result.returncode == 0:
             return full_output_path
         else:
-            st.error(f"Error tnoodle: {result.stderr}")
+            # Si falla, mostramos el error pero no rompemos la app (devolvemos None)
+            st.error(f"Error tnoodle ({tnoodle_id}): {result.stderr}")
             return None
     except Exception as e:
         st.error(f"Error ejecutando subproceso: {e}")
@@ -153,7 +170,7 @@ def load_all_data(wca_id):
         prs_dict = fn.prs_info(wca_id, results_df=results)
         stats_prs = fn.number_of_prs(wca_id, results_df=results)
         map_data = list(fn.generate_map_data(wca_id, results_df=results))
-        
+
         return {
             "info": info,
             "results": results,
@@ -419,107 +436,156 @@ def render_competitions_tab(data):
         render_activity_heatmap(data)
 
 def render_scrambles(data):
-    st.header("🧩 Scrambles Viewer (Dummy, not real)")
+    st.header("🔀 Scrambles from your competitions")
     
     df = data["results"]
     if df.empty: return
 
-    # --- 1. Selectores ---
+    # --- 1. Selector de Competición ---
     comps_df = df[['CompName', 'CompDate', 'Competition']].drop_duplicates().sort_values(by='CompDate', ascending=False)
     selected_comp_name = st.selectbox("Select Competition:", comps_df['CompName'])
     
     if not selected_comp_name: return
 
-    comp_specific_df = df[df['CompName'] == selected_comp_name]
-    # get events of that competition get_comp_data(compid)['events']
-    comp_events_codes = fn.get_comp_data(comp_specific_df.iloc[0]['Competition'])['events']
-    
-    event_options = {event_dict.get(code, code): code for code in comp_events_codes}
-    
-    selected_event_name = st.selectbox("Select Event:", list(event_options.keys()))
-    selected_event_code = event_options[selected_event_name] # ej: '333', '222'
+    comp_id = comps_df[comps_df['CompName'] == selected_comp_name].iloc[0]['Competition']
 
-    # valid names for events two, three, four, four_fast, five, six, seven, three_ni, four_ni, five_ni, three_fm, pyra, sq1, mega, clock, skewb
-    # do a dict and change the selected_event_code
-    event_code_mapping = {
-        '333': 'three',
-        '222': 'two',
-        '444': 'four',
-        '555': 'five',
-        '666': 'six',
-        '333oh': 'three',
-        '777': 'seven',
-        '333bf': 'three_ni',
-        '444bf': 'four_ni',
-        '555bf': 'five_ni',
-        '333fm': 'three_fm',
-        'pyram': 'pyra',
-        'sq1': 'sq1',
-        'minx': 'mega',
-        'clock': 'clock',
-        'skewb': 'skewb'
-    }
-    
-    selected_event_code = event_code_mapping.get(selected_event_code, selected_event_code)
+    # --- 2. Carga de Scrambles Reales ---
+    # Usamos la nueva función limpia
+    scramble_data = fn.get_scrambles(comp_id)
+
+    if not scramble_data:
+        st.warning("No public scrambles available for this competition yet.")
+        return
 
     st.divider()
 
-    # we load the wcif of the competition
-    wcif_url = f'https://worldcubeassociation.org/api/v0/competitions/{comp_specific_df.iloc[0]["Competition"]}/wcif/public'
-    wcif_data = fn.fetch_json(wcif_url)
-
-    # now we cry because scrambles are not in the public wcif
+    # --- 3. Selectores de Evento y Ronda ---
+    col_sel1, col_sel2 = st.columns(2)
     
+    with col_sel1:
+        # Eventos disponibles en el JSON de scrambles
+        available_events = list(scramble_data.keys())
+        # Mapeo a nombres bonitos
+        event_options = {event_dict.get(code, code): code for code in available_events}
+        selected_event_name = st.selectbox("Select Event:", list(event_options.keys()))
+        selected_event_code = event_options[selected_event_name]
 
-    # --- 2. Datos Dummy para Sets A y B ---
-    # En el futuro, esto vendrá de una base de datos o lógica real
-    dummy_scrambles = ["D' R' U' R B2 U2 L D' F' R2 F2 B R2 D2 F R2 B' R2 D2 L ",
-                        "F2 B R D' R' U2 L' F2 L2 F' D2 R2 B' U2 F2 U2 D2 L2 B L",
-                        "F D' L' U' F2 R D' B' L U' L2 U' B2 R2 U L2 D2 R2 U L2 ",
-                        "B' D' L2 U' L2 U' R2 D U B2 U B2 F2 L' R2 D R2 D' B U' R2 ",
-                        "U' F' D2 R2 B2 U' L2 R2 U R2 U2 F2 R2 U2 F' L' B' D R U2 B2 "] 
+    with col_sel2:
+        # Rondas disponibles para ese evento
+        available_rounds = list(scramble_data[selected_event_code].keys())
+        # Mapeo simple para nombres de ronda (d, 1, 2, 3, f...)
+        round_map = {'1': 'Round 1', '2': 'Round 2', '3': 'Round 3', 'f': 'Final', 'c': 'Combined', 'd': 'Qual. Round'}
+        round_options = {round_map.get(r, f"Round {r}"): r for r in available_rounds}
+        
+        selected_round_name = st.selectbox("Select Round:", list(round_options.keys()))
+        selected_round_code = round_options[selected_round_name]
 
-    # --- 3. Función de renderizado por filas ---
-    def render_set_rows(set_label, scrambles_list):
+    # Datos finales a renderizar (Diccionario de grupos: {'A': [...], 'B': [...]})
+    groups_data = scramble_data[selected_event_code][selected_round_code]
+
+    # Mapeo para TNoodle (nombre de archivo)
+    tnoodle_code_mapping = {
+        '333': 'three', '222': 'two', '444': 'four', '555': 'five', '666': 'six', '777': 'seven',
+        '333oh': 'three', '333bf': 'three_ni', '444bf': 'four_ni', '555bf': 'five_ni',
+        '333fm': 'three_fm', 'pyram': 'pyra', 'sq1': 'sq1', 'minx': 'mega', 
+        'clock': 'clock', 'skewb': 'skewb'
+    }
+    tnoodle_event = tnoodle_code_mapping.get(selected_event_code, selected_event_code)
+
+    st.divider()
+
+    # --- 4. Renderizado Dinámico de Grupos ---
+    # Iteramos sobre los grupos ordenados alfabéticamente (A, B, C...)
+    for group_id in sorted(groups_data.keys()):
+        scramble_list = groups_data[group_id]
+        
         with st.container(border=True):
-            st.subheader(f"📂 {set_label}")
+            st.subheader(f"📂 Group {group_id}")
             
-            for i, scram in enumerate(scrambles_list):
-                # Crear nombre de archivo único para evitar colisiones
-                # ej: 333_SetA_1.svg
-                filename = f"{selected_event_code}_{set_label}_{i+1}.svg"
+            for item in scramble_list:
+                num = item['num']
+                scram_str = item['scramble']
+                is_extra = item['is_extra']
                 
-                # Generar imagen
-                img_path = generate_scramble_image(selected_event_code, scram, filename)
+                # Etiqueta: 1, 2, 3... o E1, E2...
+                label_num = f"E{num}" if is_extra else f"{num}"
                 
-                # --- DISEÑO EN FILA (ROW) ---
-                # Columna 1 pequeña (Imagen), Columna 2 grande (Texto)
+                # Nombre de archivo único
+                filename = f"{selected_event_code}_{selected_round_code}_{group_id}_{label_num}.svg"
+                
+                # Generar imagen (tu función existente)
+                img_path = generate_scramble_image(selected_event_code, scram_str, filename)
+                
+                # Layout de Fila
                 c_img, c_text = st.columns([1, 4]) 
                 
                 with c_img:
                     if img_path and os.path.exists(img_path):
                         st.image(img_path, width=150)
                     else:
-                        st.warning("Img fail")
+                        st.warning("Img error")
                 
                 with c_text:
-                    st.markdown(f"**{i+1}.**")
-                    # Usamos st.code para que sea fácil de copiar y leer
-                    st.code(scram, language=None)
+                    st.markdown(f"**{label_num}.**")
+                    st.code(scram_str, language=None)
                 
-                # Separador sutil entre mezclas
-                if i < len(scrambles_list) - 1:
-                    st.markdown("<hr style='margin: 5px 0; opacity: 0.3;'>", unsafe_allow_html=True)
-
-    # Renderizamos los sets
-    render_set_rows("Set A", dummy_scrambles)
-    render_set_rows("Set B", dummy_scrambles)
+                # Separador visual entre mezclas
+                if item != scramble_list[-1]:
+                    st.markdown("<hr style='margin: 5px 0; opacity: 0.1;'>", unsafe_allow_html=True)
 
 def render_personal_bests_cards(data):
     st.header("🏆 Personal Bests")
-
     df = data["results"].copy()
     if df.empty: return
+
+    # Definimos la referencia temporal real (Hoy)
+    today = pd.Timestamp.now().normalize() 
+
+    # --- SECCIÓN DE FILTROS ---
+    with st.expander("📅 Time period", expanded=True):
+        c1, c2 = st.columns([1, 2])
+        
+        filter_type = c1.selectbox(
+            "Select the period:", 
+            ["All Time", "Past Year", "Current Year", "Custom Range"]
+        )
+        
+        df_filtered = df.copy()
+
+        if filter_type == "Past Year":
+            # Un año exacto hacia atrás desde hoy
+            start_date = today - pd.DateOffset(years=1)
+            df_filtered = df[(df['CompDate'] >= start_date) & (df['CompDate'] <= today)]
+            st.info(f"Mostrando resultados desde el {start_date.strftime('%d/%m/%Y')} hasta hoy.")
+
+        elif filter_type == "Current Year":
+            # Desde el 1 de enero del año actual
+            start_date = pd.Timestamp(year=today.year, month=1, day=1)
+            df_filtered = df[(df['CompDate'] >= start_date) & (df['CompDate'] <= today)]
+            st.info(f"Showing only results from  {today.year}")
+
+        elif filter_type == "Custom Range":
+            min_comp = df['CompDate'].min().to_pydatetime()
+            date_range = c2.date_input(
+                "Custom Range:",
+                value=(min_comp, today.to_pydatetime()),
+                max_value=today.to_pydatetime()
+            )
+            if isinstance(date_range, tuple) and len(date_range) == 2:
+                df_filtered = df[(df['CompDate'] >= pd.to_datetime(date_range[0])) & 
+                                 (df['CompDate'] <= pd.to_datetime(date_range[1]))]
+
+    # Reemplazamos el DF original por el filtrado para los cálculos de PB
+    df = df_filtered
+
+    if df.empty:
+        if filter_type == "All Time":
+            st.warning("No results found. Have you competed yet? 😉")
+        elif filter_type == "Current Year":
+            st.warning("No results this year. Time to go to a comp!! 😉")
+        else:
+            st.warning("No results in this period!")
+        return
 
     # Orden de eventos estándar
     ordered_events = [k for k in event_dict.keys() if k in df['Event'].unique()]
@@ -672,142 +738,6 @@ def render_activity_heatmap(data):
     )
 
     st.plotly_chart(fig, use_container_width=True)
-
-def render_competitions(data): # Legacy
-    st.header("🌍 Competitions History")
-
-    df = data["results"].copy()
-    if not df.empty:
-        # 1. Agrupar datos (Igual que antes)
-        comps = df.groupby(['CompName', 'CompDate', 'Country'])['Event'].unique().reset_index()
-        comps = comps.sort_values(by="CompDate", ascending=False)
-        
-        comps['Date'] = comps['CompDate'].dt.strftime('%Y-%m-%d')
-        comps['Location'] = comps['Country'].apply(lambda x: f"{fn.get_flag_emoji(x)} {fn.get_country_name(x)}")
-        
-        # 2. Generar HTML de iconos (Con el arreglo de tamaño incluido)
-        def get_event_icons_html(event_list):
-            # Orden personalizado: 333 primero, luego 222, etc. o alfabético
-            # Aquí usamos el orden que viene del groupby, o puedes hacer sorted(event_list)
-            sorted_events = sorted(event_list) 
-            
-            html = '<div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">'
-            for ev in sorted_events:
-                icon_url = f"https://raw.githubusercontent.com/cubing/icons/main/src/svg/event/{ev}.svg"
-                # Iconos ligeramente más pequeños (20px) para que la fila no sea gigante
-                html += f'<img src="{icon_url}" class="wca-icon" title="{event_dict.get(ev, ev)}">'
-            html += "</div>"
-            return html
-
-        comps['Events'] = comps['Event'].apply(get_event_icons_html)
-
-        # Seleccionar columnas
-        final_view = comps[['Date', 'CompName', 'Location', 'Events']].rename(columns={'CompName': 'Competition', 'Events': 'Events Participated', 'Location': 'Region'})
-        
-        # 3. Convertir a HTML
-        table_html = final_view.to_html(index=False, escape=False)
-        
-        # 4. CSS "Nativo" de Streamlit
-        # Este CSS imita los colores, fuentes y bordes de st.dataframe
-        st.markdown("""
-        <style>
-        /* Contenedor con bordes redondeados como los widgets de Streamlit */
-        .wca-table-container {
-            border: 1px solid rgba(49, 51, 63, 0.2);
-            border-radius: 0.5rem;
-            overflow: hidden; /* Para que las esquinas redondeadas recorten la tabla */
-            margin-bottom: 1rem;
-        }
-
-        .wca-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-family: "Source Sans Pro", sans-serif; /* Fuente nativa de Streamlit */
-            font-size: 14px;
-            color: rgb(49, 51, 63); /* Color texto oscuro estándar */
-        }
-        
-        /* Ajustes para modo oscuro (automáticos si el navegador lo soporta, 
-           pero Streamlit inyecta sus variables. Usamos transparencia para compatibilidad) */
-        @media (prefers-color-scheme: dark) {
-            .wca-table { color: #fafafa; }
-            .wca-table-container { border-color: rgba(250, 250, 250, 0.2); }
-        }
-
-        .wca-table th {
-            text-align: left;
-            background-color: rgba(150, 150, 150, 0.1); /* Fondo gris sutil para cabecera */
-            padding: 12px 16px;
-            font-weight: 600;
-            border-bottom: 1px solid rgba(49, 51, 63, 0.2);
-        }
-
-        .wca-table td {
-            padding: 12px 16px;
-            border-bottom: 1px solid rgba(49, 51, 63, 0.1);
-            vertical-align: middle;
-        }
-
-        /* Hover effect en las filas */
-        .wca-table tr:hover td {
-            background-color: rgba(150, 150, 150, 0.05);
-        }
-
-        /* Control estricto de iconos */
-        img.wca-icon {
-            width: 22px !important;
-            height: 22px !important;
-            object-fit: contain;
-            vertical-align: middle;
-            margin: 0 !important;
-        }
-        
-        /* Ocultar bordes de la tabla generada por pandas por defecto */
-        .dataframe { border: none !important; }
-        </style>
-        """, unsafe_allow_html=True)
-
-        # Renderizamos la tabla dentro del contenedor estilizado
-        table_html = table_html.replace('<table border="1" class="dataframe">', '<table class="wca-table">')
-        st.markdown(f'<div class="wca-table-container">{table_html}</div>', unsafe_allow_html=True)
-
-    st.divider()
-
-    # --- A. MAPA (Sin cambios) ---
-    map_df = pd.DataFrame(data["map_data"])
-    if not map_df.empty:
-        # ... (Mantén el código del mapa aquí igual que antes) ...
-        # (Para ahorrar espacio no lo copio de nuevo, pero asegúrate de dejarlo aquí)
-        with st.expander("🗺️ View Map", expanded=True):
-            map_df['pos_key'] = map_df['lat'].astype(str) + map_df['lon'].astype(str)
-            metres_in_degrees = 0.000045 
-            
-            def apply_jitter(group):
-                if len(group) > 1:
-                    for i in range(len(group)):
-                        angle = 2 * np.pi * i / len(group)
-                        group.iloc[i, group.columns.get_loc('lat')] += metres_in_degrees * np.cos(angle)
-                        group.iloc[i, group.columns.get_loc('lon')] += metres_in_degrees * np.sin(angle)
-                return group
-
-            map_df = map_df.groupby('pos_key', group_keys=False).apply(apply_jitter)
-
-            view_state = pdk.ViewState(
-                latitude=map_df['lat'].mean(), longitude=map_df['lon'].mean(),
-                zoom=2, pitch=0
-            )
-            layer = pdk.Layer(
-                "ScatterplotLayer", map_df,
-                get_position='[lon, lat]', get_color='[255, 75, 75, 200]',
-                radius_min_pixels=5, radius_max_pixels=15,
-                pickable=True, stroked=True,
-                line_width_min_pixels=1, get_line_color=[255, 255, 255]
-            )
-            st.pydeck_chart(pdk.Deck(
-                map_style='https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-                initial_view_state=view_state, layers=[layer],
-                tooltip={"text": "{nombre}\n📅 {fecha}"}
-            ))
 
 def render_competition_list(data):
     st.header("📋 Competition History")
@@ -984,93 +914,102 @@ def render_competition_map(data):
         layers=[layer],
         tooltip={"text": "{nombre}\n📅 {fecha}"}
     ))
+
 def render_progression(data):
     st.header("📈 Personal Best Progression")
     df = data["results"].copy()
     if df.empty: return
 
-    # Obtener eventos disponibles pero ordenarlos según event_dict
+    # Diccionario de eventos disponibles
     available_events = [e for e in event_dict.keys() if e in df['Event'].unique()]
     opts = {event_dict[e]: e for e in available_events}
-    
+
+    # --- SECCIÓN 1: GRÁFICO DE PROGRESIÓN ---
+    st.subheader("Evolution Graph")
     c1, c2 = st.columns([3, 1])
     with c1:
-        # El orden aquí será ahora siempre el de event_dict
-        sel_name = st.selectbox("Select Event:", list(opts.keys()))
+        # Usamos key="event_graph" para independizarlo
+        sel_name_graph = st.selectbox("Select Event (Graph):", list(opts.keys()), key="event_graph")
     with c2:
-        type_sel = st.selectbox("Type:", ["Single", "Average"])
+        type_sel_graph = st.selectbox("Type (Graph):", ["Single", "Average"], key="type_graph")
 
-    sel_code = opts[sel_name]
-    col_target = 'best_cs' if type_sel == "Single" else 'avg_cs'
+    sel_code_graph = opts[sel_name_graph]
+    col_target_graph = 'best_cs' if type_sel_graph == "Single" else 'avg_cs'
     
-    # Filtrar datos válidos
-    dfe = df[(df['Event'] == sel_code) & (df[col_target] > 0) & (df['CompDate'].notnull())].copy()
+    dfe_graph = df[(df['Event'] == sel_code_graph) & (df[col_target_graph] > 0)].copy()
     
-    if dfe.empty:
-        st.warning(f"No valid {type_sel} results found for this event.")
-        return
+    if not dfe_graph.empty:
+        dfe_graph = dfe_graph.sort_values(by='CompDate')
+        dfe_graph['pr_so_far'] = dfe_graph[col_target_graph].cummin()
+        pr_history = dfe_graph[dfe_graph[col_target_graph] == dfe_graph['pr_so_far']].drop_duplicates(subset=[col_target_graph])
+        
+        is_fmc_g = sel_code_graph == "333fm"
+        div_g = 1 if (is_fmc_g and type_sel_graph == "Single") else 100
 
-    dfe = dfe.sort_values(by='CompDate', ascending=True)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=pr_history['CompDate'], y=pr_history[col_target_graph] / div_g, 
+                                 mode='lines+markers', name='Personal Best', line=dict(color='#FF4B4B', shape='hv')))
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("No data for this selection.")
 
-    is_fmc = sel_code == "333fm"
-    divisor = 1 if (is_fmc and type_sel == "Single") else 100
-    unit = "moves" if is_fmc else "seconds"
-
-    # Lógica de PB acumulado
-    dfe['pr_so_far'] = dfe[col_target].cummin()
-    pr_history = dfe[dfe[col_target] == dfe['pr_so_far']].drop_duplicates(subset=[col_target], keep='first')
-
-    fig = go.Figure()
-
-    # 1. Línea de PB
-    fig.add_trace(go.Scatter(
-        x=pr_history['CompDate'], 
-        y=pr_history[col_target] / divisor,
-        mode='lines+markers',
-        name=f'PB {type_sel}',
-        line=dict(color='#FF4B4B', width=3, shape='hv'),
-        marker=dict(size=8, color='#FF4B4B')
-    ))
-
-    # 2. Todos los resultados
-    fig.add_trace(go.Scatter(
-        x=dfe['CompDate'],
-        y=dfe[col_target] / divisor,
-        mode='markers',
-        name='All Results',
-        marker=dict(size=4, color='rgba(0,0,0,0.1)'),
-        hoverinfo='skip'
-    ))
-
-    # 3. Media Móvil (MA5)
-    dfe['MA_5'] = dfe[col_target].rolling(window=5, min_periods=1).mean()
-    fig.add_trace(go.Scatter(
-        x=dfe['CompDate'],
-        y=dfe['MA_5'] / divisor,
-        mode='lines',
-        name='Avg (Last 5)',
-        line=dict(color='rgba(100, 100, 100, 0.4)', width=2, dash='dot')
-    ))
-
-    fig.update_layout(
-        title=f"Evolution of {sel_name} ({type_sel})",
-        xaxis_title="Date",
-        yaxis_title=unit,
-        hovermode="x unified",
-        plot_bgcolor='rgba(0,0,0,0)',
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
+    # --- SECCIÓN 2: COMPARATIVA ANUAL INDEPENDIENTE ---
+    st.divider()
+    st.subheader("🗓️ Year-over-Year Comparison")
     
-    st.plotly_chart(fig, use_container_width=True)
-    st.caption(f"🔴 Red line: Your {type_sel} personal record history. ⚫ Grey dots: All official results.")
+    # Selectores independientes para la comparativa
+    cc1, cc2 = st.columns([3, 1])
+    with cc1:
+        sel_name_comp = st.selectbox("Select Event (Comparison):", list(opts.keys()), key="event_comp")
+    with cc2:
+        type_sel_comp = st.selectbox("Type (Comparison):", ["Single", "Average"], key="type_comp")
 
-# En wca_app.py
+    sel_code_comp = opts[sel_name_comp]
+    col_target_comp = 'best_cs' if type_sel_comp == "Single" else 'avg_cs'
+    
+    dfe_comp = df[(df['Event'] == sel_code_comp) & (df[col_target_comp] > 0)].copy()
 
-# En wca_app.py
+    if not dfe_comp.empty:
+        dfe_comp['Year'] = dfe_comp['CompDate'].dt.year
+        yearly_best = dfe_comp.groupby('Year')[col_target_comp].min().reset_index()
+        available_years = sorted(yearly_best['Year'].unique(), reverse=True)
+
+        if len(available_years) < 2:
+            st.info("Participate in at least two different years to compare.")
+        else:
+            y_col1, y_col2 = st.columns(2)
+            with y_col1:
+                year1 = st.selectbox("Year 1 (Base):", available_years, index=1, key="y1")
+            with y_col2:
+                year2 = st.selectbox("Year 2 (Target):", available_years, index=0, key="y2")
+
+            val1 = yearly_best[yearly_best['Year'] == year1][col_target_comp].values[0]
+            val2 = yearly_best[yearly_best['Year'] == year2][col_target_comp].values[0]
+
+            # Formateo y Cálculos
+            is_fmc_c = sel_code_comp == "333fm"
+            div_c = 1 if (is_fmc_c and type_sel_comp == "Single") else 100
+            
+            diff = (val1 - val2) / div_c
+            percent = ((val1 - val2) / val1) * 100
+            
+            t1_str = fn.format_wca_time(val1, event_code=sel_code_comp)
+            t2_str = fn.format_wca_time(val2, event_code=sel_code_comp)
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric(f"PB {year1}", t1_str)
+            m2.metric(f"PB {year2}", t2_str)
+            
+            unit = "moves" if is_fmc_c else "sec"
+            # El delta muestra la mejora (verde si el tiempo baja)
+            m3.metric("Improvement", f"{diff:.2f} {unit}", delta=f"{diff:.2f}", delta_color="normal")
+            m4.metric("Percentage", f"{percent:.1f}%", delta=f"{percent:.1f}%", delta_color="normal")
+    else:
+        st.warning("No data for this selection.")
 
 def render_neighbours_tab(data):
     st.header("🤝 WCA Neighbours")
-    st.info("Learn who you've competed the most with!")
+    st.info("Find the cubers that have attended the most competitions with you!")
 
     info = data.get('info', {})
     wca_id = info.get('person.wca_id') or info.get('id')
@@ -1078,56 +1017,125 @@ def render_neighbours_tab(data):
     results = data.get('results', pd.DataFrame())
 
     if not wca_id or results.empty:
-        st.error("No hay datos suficientes para calcular vecinos.")
+        st.error("Insufficient data.")
         return
 
-    # --- NUEVO: Selector de Año ---
-    # Extraemos los años únicos de las competiciones
-    if 'CompDate' in results.columns and pd.api.types.is_datetime64_any_dtype(results['CompDate']):
-        years = sorted(results['CompDate'].dt.year.unique().astype(int), reverse=True)
-    else:
-        years = []
+    # Selector de año
+    years = sorted(results['CompDate'].dt.year.unique().astype(int), reverse=True)
+    options = ["All"] + [str(y) for y in years]
     
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        options = years
-        selected_year_opt = st.selectbox("📅 Select a year", options)
-    
-    # Preparamos el valor para enviar a la función (None si es "Todos")
-    selected_year = None if selected_year_opt == "Todos" else selected_year_opt
+    col_sel, _ = st.columns([1, 2])
+    selected_year_opt = col_sel.selectbox("📅 Select a year", options)
+    selected_year = None if selected_year_opt == "All" else int(selected_year_opt)
 
-    # Botón de acción
     if st.button(f"Search neighbours ({selected_year_opt})"):
-        with st.spinner(f"Analyzing competitions from {selected_year_opt}... (this may take a while)"):
-            # Pasamos 'results' y el 'year' a la función
+        with st.spinner("Analyzing competitions..."):
             df_neigh = fn.get_wca_neighbours(wca_id, year=selected_year)
 
         if df_neigh.empty:
-            st.warning("No se encontraron coincidencias o hubo un error.")
+            st.warning("No matches found.")
             return
 
+        # Filtrar al propio usuario
         if my_name:
-            df_neigh = df_neigh[df_neigh['Name'] != my_name]
+            df_neigh = df_neigh[df_neigh['Name'] != my_name].reset_index(drop=True)
 
-        st.subheader(f"Top coincidencia en {selected_year_opt}")
+        st.markdown("---")
         
-        # Gráfico
-        fig = px.bar(
-            df_neigh.head(15), 
-            x='Count', 
-            y='Name', 
-            orientation='h',
-            text='Count',
-            title=f"Coincidencias ({selected_year_opt})",
-            color='Count',
-            color_continuous_scale='Viridis'
+        # --- LÓGICA DE PODIO CORREGIDA ---
+        unique_counts = sorted(df_neigh['Count'].unique(), reverse=True)
+
+        podium_slots = [] 
+        current_total_people = 0
+        names_in_podium = []  
+
+        for count_value in unique_counts:
+            people_at_this_level = df_neigh[df_neigh['Count'] == count_value]['Name'].tolist()
+            num_people = len(people_at_this_level)
+            
+            # Determinamos los atributos visuales según el ranking actual
+            if current_total_people == 0:
+                # Nivel 1: Oro
+                podium_slots.append((people_at_this_level, "🥇", "#FFD700"))
+            elif current_total_people == 1:
+                # Nivel 2: Plata
+                podium_slots.append((people_at_this_level, "🥈", "#C0C0C0"))
+            elif current_total_people == 2:
+                # Nivel 3: Bronce
+                podium_slots.append((people_at_this_level, "🥉", "#CD7F32"))
+            
+            names_in_podium.extend(people_at_this_level)
+            current_total_people += num_people
+            
+            if current_total_people >= 3:
+                break 
+
+        # --- RENDERIZADO ---
+        cols_podium = st.columns(len(podium_slots))
+
+        for i, (names, medal, color) in enumerate(podium_slots):
+            names_display = "<br>".join(names)
+            with cols_podium[i]:
+                st.markdown(f"""
+                <div style="
+                    background-color: {color}22; 
+                    padding: 15px; 
+                    border-radius: 15px; 
+                    border: 2px solid {color}; 
+                    text-align: center; 
+                    min-height: 200px; 
+                    display: flex; 
+                    flex-direction: column; 
+                    justify-content: center;">
+                    <h1 style="margin:0;">{medal}</h1>
+                    <div style="font-size: 24px; font-weight: 800; margin: 10px 0;">
+                        {unique_counts[i]} <span style="font-size: 14px; font-weight: 400;">Competitions</span>
+                    </div>
+                    <div style="font-size: 14px; line-height: 1.2;">{names_display}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # --- SECCIÓN RESTO DE LA LISTA CON RANKING ---
+        # Filtramos los que ya han salido en el podio
+        df_others = df_neigh[~df_neigh['Name'].isin(names_in_podium)]
+        
+        if not df_others.empty:
+            st.markdown("<br>", unsafe_allow_html=True)
+            with st.expander("See rest of cubers", expanded=True):
+                # El ranking del primer "otro" es el total de personas que hubo en el podio + 1
+                current_rank = len(names_in_podium) + 1
+                max_count = df_neigh['Count'].max()
+                
+                # Agrupamos por número de competiciones para gestionar empates en la lista extendida
+                others_grouped = df_others.groupby('Count', sort=False)
+                
+                for count, group in others_grouped:
+                    num_people_in_tie = len(group)
+                    
+                    for _, row in group.iterrows():
+                        c1, c2 = st.columns([3, 1])
+                        # Mostramos el ranking actual
+                        c1.write(f"{current_rank}. **{row['Name']}**")
+                        c2.caption(f"{row['Count']} competitions together")
+                        st.progress(row['Count'] / max_count)
+                    
+                    # El siguiente ranking salta según cuántos hubo en este empate
+                    current_rank += num_people_in_tie
+
+                    # Limitar a los 20 primeros para no saturar la interfaz
+                    if current_rank > 23: # 3 del podio + 20 extras
+                        break
+                    
+        st.download_button(
+            "Download complete list (CSV)",
+            df_neigh.to_csv(index=False),
+            f"vecinos_wca_{selected_year_opt}.csv",
+            "text/csv"
         )
-        fig.update_layout(yaxis={'categoryorder':'total ascending'})
-        st.plotly_chart(fig, use_container_width=True)
-
-        with st.expander("Ver lista completa"):
-            st.dataframe(df_neigh, use_container_width=True)
-
 
 ####### STREAMLIT APP MAIN LOGIC ###########
 
@@ -1135,13 +1143,13 @@ st.sidebar.title("🎲 MyCubing")
 wca_id_input = st.sidebar.text_input("WCA ID", placeholder="2016LOPE37").upper().strip()
 
 selection = st.sidebar.radio("Go to:", [
-    "Summary", 
-    "Personal Bests", 
-    "Competitions",      
-    "Statistics", 
-    "Progression",
-    "Scrambles",
-    "WCA Neighbours"
+    "📝 Summary", 
+    "🏆 Personal Bests", 
+    "🌍 Competitions",      
+    "📊 Statistics", 
+    "📈 Progression",
+    "🔀 Scrambles",
+    "🤝 WCA Neighbours"
 ])
 
 if wca_id_input:
@@ -1149,32 +1157,24 @@ if wca_id_input:
         data = load_all_data(wca_id_input)
 
     if data:
-        if selection == "Summary": 
-            render_summary_enhanced(data, wca_id_input)
-            
-        elif selection == "Personal Bests": 
-            render_personal_bests_cards(data)
-            
-        elif selection == "Competitions": 
-            render_competitions_tab(data) 
-            
-        elif selection == "Statistics": 
+        if selection == "📝 Summary": 
+            render_summary_enhanced(data, wca_id_input) 
+        elif selection == "🏆 Personal Bests": 
+            render_personal_bests_cards(data)  
+        elif selection == "🌍 Competitions": 
+            render_competitions_tab(data)   
+        elif selection == "📊 Statistics": 
             render_statistics(data)
-            
-        elif selection == "Progression": 
+        elif selection == "📈 Progression": 
             render_progression(data)
-
-        elif selection == "Scrambles":
+        elif selection == "🔀 Scrambles":
             render_scrambles(data)
-
-        elif selection == "WCA Neighbours":
+        elif selection == "🤝 WCA Neighbours":
             render_neighbours_tab(data)
-
-        # Footer sidebar con nombre
         name = data['info'].get('person.name', wca_id_input)
         st.sidebar.success(f"Loaded: {name}")
     else:
         st.sidebar.error("Profile not found or API error.")
 else:
-    st.title("🎲 Welcome to MyCubing")
+    st.title("🎲 Welcome to MyCubing!")
     st.markdown("Enter your **WCA ID** in the sidebar to see your advanced stats.")
