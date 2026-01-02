@@ -407,13 +407,15 @@ def render_scrambles(data):
     if df.empty: return
 
     # --- 1. Selectores ---
-    comps_df = df[['CompName', 'CompDate']].drop_duplicates().sort_values(by='CompDate', ascending=False)
+    comps_df = df[['CompName', 'CompDate', 'Competition']].drop_duplicates().sort_values(by='CompDate', ascending=False)
     selected_comp_name = st.selectbox("Select Competition:", comps_df['CompName'])
     
     if not selected_comp_name: return
 
     comp_specific_df = df[df['CompName'] == selected_comp_name]
-    comp_events_codes = comp_specific_df['Event'].unique()
+    # get events of that competition get_comp_data(compid)['events']
+    comp_events_codes = fn.get_comp_data(comp_specific_df.iloc[0]['Competition'])['events']
+    
     event_options = {event_dict.get(code, code): code for code in comp_events_codes}
     
     selected_event_name = st.selectbox("Select Event:", list(event_options.keys()))
@@ -443,6 +445,13 @@ def render_scrambles(data):
     selected_event_code = event_code_mapping.get(selected_event_code, selected_event_code)
 
     st.divider()
+
+    # we load the wcif of the competition
+    wcif_url = f'https://worldcubeassociation.org/api/v0/competitions/{comp_specific_df.iloc[0]["Competition"]}/wcif/public'
+    wcif_data = fn.fetch_json(wcif_url)
+
+    # now we cry because scrambles are not in the public wcif
+    
 
     # --- 2. Datos Dummy para Sets A y B ---
     # En el futuro, esto vendrá de una base de datos o lógica real

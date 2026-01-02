@@ -85,6 +85,16 @@ def format_wca_time(cs, event_code=""):
     else:
         return f"{seconds}.{hundredths:02d}s"
 
+def get_comp_wcif(comp_id):
+    """
+    Obtiene el WCIF público oficial de la WCA.
+    """
+    # Usamos el endpoint oficial público
+    url = f"https://www.worldcubeassociation.org/api/v0/competitions/{comp_id}/wcif/public"
+    
+    # Reutilizamos tu helper fetch_json que ya maneja errores y timeouts
+    return fetch_json(url)
+
 def get_wca_results(wca_id):
     """
     Main function to get results. 
@@ -323,5 +333,8 @@ def get_heatmap_data(results_df):
 
 # rapido para probar la funcion de info
 if __name__ == "__main__":
-    wcaid = "2016LOPE37"
+    wcif_url = f'https://worldcubeassociation.org/api/v0/competitions/BasauriOpen2025/wcif/public'
+    wcif_data = fetch_json(wcif_url)
+    print(wcif_data)
+    
 
