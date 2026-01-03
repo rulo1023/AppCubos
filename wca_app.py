@@ -9,6 +9,8 @@ import numpy as np
 import pydeck as pdk
 import subprocess 
 import os          
+import urllib.parse
+import streamlit.components.v1 as components
 
 
 st.set_page_config(page_title="MyCubing Dashboard", layout="wide", page_icon="🎲")
@@ -131,7 +133,7 @@ def generate_scramble_image(puzzle_id, scramble_string, unique_filename):
     is_windows = platform.system().lower().startswith("win")
 
     executable = "tnoodle.bat" if is_windows else "tnoodle"
-    executable_path = CLI_BIN_PATH
+    executable_path = os.path.join(CLI_BIN_PATH, executable)
 
     # --- VALIDACIONES ---
     if not os.path.exists(executable_path):
@@ -461,7 +463,7 @@ def render_competitions_tab(data):
     with tab3:
         render_activity_heatmap(data)
 
-def render_scrambles(data):
+def render_scrambles_old(data):
     st.header("🔀 Scrambles from your competitions")
 
     twizzle_puzzle_map = {
@@ -611,6 +613,160 @@ def render_scrambles(data):
                     
                     st.code(scram_str, language=None)
                 
+                if item != current_scrambles[-1]:
+                    st.markdown("<hr style='margin: 5px 0; opacity: 0.1;'>", unsafe_allow_html=True)
+
+def render_scrambles(data):
+    # --- 1. CONFIGURACIÓN Y MAPEOS ---
+    # Mapeo para Twizzle (visualización externa)
+    twizzle_puzzle_map = {
+        '333': '3x3x3', '222': '2x2x2', '444': '4x4x4', '555': '5x5x5', '666': '6x6x6', '777': '7x7x7',
+        '333oh': '3x3x3', '333bf': '3x3x3', '333fm': '3x3x3',
+        'minx': 'megaminx', 'pyram': 'pyraminx', 'skewb': 'skewb', 'clock': 'clock', 'sq1': 'square1',
+        '444bf': '4x4x4', '555bf': '5x5x5', '333mbf': '3x3x3'
+    }
+
+    # Mapeo para scramble-display (IDs oficiales WCA para la librería)
+    wca_event_map = {
+        '333': '333', '222': '222', '444': '444', '555': '555', '666': '666', '777': '777',
+        '333oh': '333', '333bf': '333', 'minx': 'minx', 'pyram': 'pyram', 
+        'skewb': 'skewb', 'clock': 'clock', 'sq1': 'sq1', '444bf': '444', '555bf': '555'
+    }
+
+    st.header("🔀 Scrambles from your competitions")
+
+    df = data["results"]
+    if df.empty:
+        st.info("No results found.")
+        return
+
+    # --- 2. SELECCIÓN DE COMPETICIÓN ---
+    comps_df = df[['CompName', 'CompDate', 'Competition']].drop_duplicates().sort_values(by='CompDate', ascending=False)
+    selected_comp_name = st.selectbox("Select Competition:", comps_df['CompName'])
+    
+    if not selected_comp_name: return
+
+    comp_id = comps_df[comps_df['CompName'] == selected_comp_name].iloc[0]['Competition']
+
+    # --- 3. CARGA DE DATOS (Requiere tu módulo functions como fn) ---
+    import functions as fn 
+    scramble_data = fn.get_scrambles(comp_id)
+
+    if not scramble_data:
+        st.warning("No public scrambles available for this competition yet.")
+        return
+
+    st.divider()
+
+    # --- 4. SELECTORES DE EVENTO Y RONDA ---
+    col_sel1, col_sel2 = st.columns(2)
+    
+    with col_sel1:
+        available_events = list(scramble_data.keys())
+        # Aquí puedes usar un diccionario de nombres si lo tienes, si no, usa el código
+        selected_event_code = st.selectbox("Select Event:", available_events)
+
+    with col_sel2:
+        available_rounds = list(scramble_data[selected_event_code].keys())
+        round_map = {'1': 'First Round', '2': 'Second Round', '3': 'Semi-final', 'f': 'Final', 'c': 'Combined Final', 'd': 'Combined First Round'}
+        round_options = {round_map.get(r, f"Round {r}"): r for r in available_rounds}
+        
+        selected_round_name = st.selectbox("Select Round:", list(round_options.keys()))
+        selected_round_code = round_options[selected_round_name]
+
+    # Datos brutos de los grupos
+    groups_data = scramble_data[selected_event_code][selected_round_code]
+
+    # --- 5. PROCESAMIENTO DE GRUPOS (Lógica MBF y Normal) ---
+    processed_groups = {}
+
+    for group_id in sorted(groups_data.keys()):
+        scramble_list = groups_data[group_id]
+        
+        if selected_event_code == '333mbf':
+            current_subgroup_idx = 1
+            last_num = -1
+            
+            for item in scramble_list:
+                scrambles_split = item['scramble'].split('\n')
+                for sub_idx, scram in enumerate(scrambles_split):
+                    current_num = sub_idx + 1
+                    if current_num <= last_num:
+                        current_subgroup_idx += 1
+                    
+                    virtual_group_id = f"{group_id}.{current_subgroup_idx}"
+                    if virtual_group_id not in processed_groups:
+                        processed_groups[virtual_group_id] = []
+                    
+                    processed_groups[virtual_group_id].append({
+                        'num': current_num,
+                        'scramble': scram,
+                        'is_extra': False
+                    })
+                    last_num = current_num
+        else:
+            processed_groups[group_id] = scramble_list
+
+    st.divider()
+
+    # --- 6. RENDERIZADO FINAL ---
+    for g_id in sorted(processed_groups.keys()):
+        current_scrambles = processed_groups[g_id]
+        
+        with st.container(border=True):
+            st.subheader(f"📂 Group {g_id}")
+            
+            for item in current_scrambles:
+                num = item['num']
+                if selected_event_code == 'minx':
+                    scram_str = item['scramble'].replace('\n', ' ')
+                else:
+                    scram_str = item['scramble']
+                is_extra = item.get('is_extra', False)
+                label_num = f"E{num}" if is_extra else f"{num}"
+                
+                # Preparar IDs y URLs
+                puzzle_twizzle = twizzle_puzzle_map.get(selected_event_code, '3x3x3')
+                puzzle_wca = wca_event_map.get(selected_event_code, '333')
+                
+                clean_scram_url = urllib.parse.quote(scram_str)
+                twizzle_url = f"https://alpha.twizzle.net/edit/?setup-alg={clean_scram_url}&puzzle={puzzle_twizzle}"
+                
+                # Layout de Fila: Imagen a la izquierda, Texto a la derecha
+                c_img, c_text = st.columns([1.5, 3.5]) 
+                
+                with c_img:
+                    # Renderizado con la librería oficial scramble-display
+                    html_code = f"""
+                    <script src="https://cdn.cubing.net/v0/js/scramble-display" type="module"></script>
+                    <style>
+                        body {{ margin: 0; background: transparent; display: flex; justify-content: center; align-items: center; }}
+                        scramble-display {{
+                            width: 160px;
+                            height: 160px;
+                            --scramble-display-bg-color: transparent;
+                        }}
+                    </style>
+                    <scramble-display 
+                        event="{puzzle_wca}" 
+                        scramble="{scram_str}">
+                        visualization="2D"
+                    </scramble-display>
+                    """
+                    components.html(html_code, height=170)
+                
+                with c_text:
+                    col_t1, col_t2 = st.columns([1, 4])
+                    with col_t1:
+                        st.markdown(f"**{label_num}.**")
+                    with col_t2:
+                        st.markdown(f'<a href="{twizzle_url}" target="_blank" style="text-decoration:none;">'
+                                    f'<button style="font-size:10px; cursor:pointer; border-radius:5px; border:1px solid #ddd; padding: 2px 5px; background-color: #f9f9f9;">'
+                                    f'🌐 View in Twizzle</button></a>', unsafe_allow_html=True)
+                    
+                    st.code(scram_str, language=None)
+                
+                # Línea separadora entre scrambles del mismo grupo
                 if item != current_scrambles[-1]:
                     st.markdown("<hr style='margin: 5px 0; opacity: 0.1;'>", unsafe_allow_html=True)
 
