@@ -14,7 +14,7 @@ import streamlit.components.v1 as components
 
 # Definimos el nombre y el icono
 APP_NAME = "MyCubing"
-ICON_URL = "https://tu-url-de-github.com/icon.png" # Reemplaza con la URL real de tu icono en GitHub o servidor
+ICON_URL = "https://github.com/rulo1023/AppCubos/blob/master/game_die.png?raw=true" # Reemplaza con la URL real de tu icono en GitHub o servidor
 
 pwa_manifest = f"""
 <link rel="manifest" href='data:application/json,{{
