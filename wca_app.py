@@ -12,6 +12,40 @@ import os
 import urllib.parse
 import streamlit.components.v1 as components
 
+# Definimos el nombre y el icono
+APP_NAME = "MyCubing"
+ICON_URL = "https://tu-url-de-github.com/icon.png" # Reemplaza con la URL real de tu icono en GitHub o servidor
+
+pwa_manifest = f"""
+<link rel="manifest" href='data:application/json,{{
+  "name": "{APP_NAME}",
+  "short_name": "{APP_NAME}",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#FF2C2C",
+  "icons": [
+    {{
+      "src": "{ICON_URL}",
+      "sizes": "512x512",
+      "type": "image/png"
+    }}
+  ]
+}}'>
+<script>
+  if ('serviceWorker' in navigator) {{
+    window.addEventListener('load', function() {{
+      navigator.serviceWorker.register('sw.js');
+    }});
+  }}
+</script>
+"""
+
+st.markdown(pwa_manifest, unsafe_allow_html=True)
+
+# Inyectar en el header
+st.markdown(pwa_manifest, unsafe_allow_html=True)
+
 
 st.set_page_config(page_title="MyCubing Dashboard", layout="wide", page_icon="🎲")
 
@@ -65,6 +99,9 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.set_page_config(layout="wide") # Opcional: hace que el contenido principal use toda la pantalla
+
+
+
 
 # Ajustes mejorados para el sidebar
 st.markdown(
