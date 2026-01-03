@@ -379,7 +379,7 @@ def fetch_names_from_comp(comp_id):
 
     # INTENTO 2: Si el anterior dio 0 o falló, vamos al WCIF (Plan B)
     print(f"⚠️ {comp_id} devolvió 0. Intentando rescate vía WCIF...")
-    time.sleep(2) # Pausa de cortesía
+    time.sleep(4) # Pausa de cortesía
     names_wcif = fetch_names_from_wcif(comp_id)
     
     if len(names_wcif) > 0:
@@ -419,6 +419,14 @@ def get_wca_neighbours_old(wca_id, year):
 
 pause_lock = threading.Lock()
 
+import time
+import threading
+import pandas as pd
+from concurrent.futures import ThreadPoolExecutor
+
+# Bloqueo global
+pause_lock = threading.Lock()
+
 def get_wca_neighbours(wca_id, year='All'):
     results_df = get_wca_results(wca_id)
     if results_df.empty:
@@ -433,32 +441,38 @@ def get_wca_neighbours(wca_id, year='All'):
     def process_single_comp(comp):
         comp = comp.strip()
         
-        # 1. Si otro hilo está haciendo la pausa de 4s, esperamos aquí a que termine
+        # 1. ENTRADA: Todos los hilos deben pasar por aquí. 
+        # Si uno está durmiendo (bloqueando el lock), los demás se quedan parados aquí.
         with pause_lock:
-            pass 
-
-        res = fetch_names_from_comp(comp)
+            # Una vez que consiguen entrar (porque el bloqueo se liberó), 
+            # hacemos la petición normal.
+            res = fetch_names_from_comp(comp)
         
-        # 2. Si detectamos el fallo de "0 names"
+        # 2. EVALUACIÓN: Si falla, bloqueamos a todos otra vez para la siesta
         if not res or len(res) == 0:
-            # Bloqueamos el semáforo para que NADIE más pida datos
             with pause_lock:
-                print(f"🛑 0 names detected in {comp}. STOPPING EVERYTHING for 4s...")
-                time.sleep(6)
-                # Reintentamos tras el parón total
+                # Volvemos a comprobar por si otro hilo ya lo arregló mientras esperábamos
                 res = fetch_names_from_comp(comp)
+                
+                if not res or len(res) == 0:
+                    print(f"🛑 0 names in {comp}. RELAXING API (6s sleep)...")
+                    time.sleep(6) # Aquí es donde el programa se relaja de verdad
+                    
+                    print(f"🔄 Triggering WCIF rescue for {comp}...")
+                    res = fetch_names_from_wcif(comp)
             
         if res and len(res) > 0:
             print(f"✅ {comp}: {len(res)} names")
         else:
-            print(f"❌ {comp}: Still 0 names")
+            print(f"❌ {comp}: Final 0 names")
             
         return res if res else []
 
     all_names = []
 
-    # Usamos max_workers=3 para que el impacto del parón sea controlado
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    # Bajamos a 3 workers. Con 4 o más, a veces las ráfagas son demasiado rápidas 
+    # y el bloqueo no llega a tiempo para frenar la siguiente petición.
+    with ThreadPoolExecutor(max_workers=3) as executor:
         list_of_results = list(executor.map(process_single_comp, comp_ids))
     
     for names in list_of_results:
@@ -467,15 +481,12 @@ def get_wca_neighbours(wca_id, year='All'):
     if not all_names:
         return pd.DataFrame()
 
-    # Lógica de diccionario y DataFrame
     competitors = {}
     for name in all_names:
         competitors[name] = competitors.get(name, 0) + 1
         
     df_final = pd.DataFrame(list(competitors.items()), columns=['Name', 'Count'])
-    df_final = df_final.sort_values(by='Count', ascending=False).reset_index(drop=True)
-
-    return df_final
+    return df_final.sort_values(by='Count', ascending=False).reset_index(drop=True)
 
 def get_scrambles(comp_id):
     """
