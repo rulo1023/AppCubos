@@ -1,15 +1,17 @@
+from turtle import st
 import requests
 import pandas as pd
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-
+import threading
 import requests
 import pandas as pd
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import pycountry
-
-
+from concurrent.futures import ThreadPoolExecutor 
+import streamlit as st
+import time
 
 # --- CACHÉ GLOBAL ---
 COMP_CACHE = {}
@@ -26,13 +28,14 @@ def fetch_json(url):
             'User-Agent': 'MyCubingApp/1.0 (streamlit_app_viewer)'
         }
         # Timeout un poco más generoso para la API oficial
-        response = session.get(url, headers=headers, timeout=10) 
+        response = session.get(url, headers=headers, timeout=20) 
         
         if response.status_code == 404:
             return None
         # Si nos limitan (429), lanzamos error para saberlo (o podrías esperar y reintentar)
         response.raise_for_status()
         return response.json()
+    
     except Exception as e:
         # Descomenta esto para depurar si sigue fallando
         # print(f"Error fetching {url}: {e}")
@@ -101,6 +104,20 @@ def get_comp_wcif_public(comp_id):
     """
     url = f"https://www.worldcubeassociation.org/api/v0/competitions/{comp_id}/wcif/public"
     return fetch_json(url)
+
+def fetch_names_from_wcif(comp_id):
+    """Plan B: Extrae nombres desde el WCIF público."""
+    url = f"https://www.worldcubeassociation.org/api/v0/competitions/{comp_id}/wcif/public"
+    try:
+        response = session.get(url, timeout=30)
+        if response.status_code == 200:
+            data = response.json()
+            # En WCIF los competidores están en la lista 'persons'
+            if 'persons' in data:
+                return [p['name'] for p in data['persons']]
+    except Exception as e:
+        print(f"Error fatal en WCIF para {comp_id}: {e}")
+    return []
 
 def get_wca_results(wca_id):
     """
@@ -336,58 +353,129 @@ def get_heatmap_data(results_df):
     heatmap_df = df_unique_comps.groupby(['Year', 'Month']).size().reset_index(name='Count')
     return heatmap_df
 
-def get_wca_neighbours(wca_id, year):
+
+def get_names_from_competition(comp_id):
+    """Descarga y cachea los nombres de una sola competición."""
+    url = f"https://www.worldcubeassociation.org/api/v0/competitions/{comp_id}/competitors"
+    # Usamos fetch_json que ya tienes definido en tu archivo
+    data = fetch_json(url) 
+    if isinstance(data, list):
+        return [person['name'] for person in data]
+    return []
+
+@st.cache_data(show_spinner=False)
+def fetch_names_from_comp(comp_id):
+    url = f"https://www.worldcubeassociation.org/api/v0/competitions/{comp_id}/competitors"
+    
+    # INTENTO 1: Endpoint estándar
+    try:
+        response = session.get(url, timeout=20)
+        if response.status_code == 200:
+            names = [p['name'] for p in response.json()]
+            if len(names) > 0:
+                return names
+    except:
+        pass
+
+    # INTENTO 2: Si el anterior dio 0 o falló, vamos al WCIF (Plan B)
+    print(f"⚠️ {comp_id} devolvió 0. Intentando rescate vía WCIF...")
+    time.sleep(2) # Pausa de cortesía
+    names_wcif = fetch_names_from_wcif(comp_id)
+    
+    if len(names_wcif) > 0:
+        print(f"✅ Rescate exitoso para {comp_id} usando WCIF ({len(names_wcif)} personas)")
+        return names_wcif
+
+    return []
+
+def get_wca_neighbours_old(wca_id, year):
     results_df = get_wca_results(wca_id)
     if results_df.empty:
         return pd.DataFrame()
 
-    # 1. Obtenemos las IDs únicas de las competiciones
-    all_comp_ids = results_df['Competition'].unique().tolist()
+    comp_ids = results_df['Competition'].unique()
+
+    year = str(year)
+
     
-    if year and year != "All":
-        year_str = str(year).strip()
-        # Filtramos solo las que TERMINAN exactamente en el año seleccionado
-        # Esto evita errores si el año aparece en medio por casualidad
-        my_comp_ids = [c for c in all_comp_ids if str(c).endswith(year_str)]
-    else:
-        my_comp_ids = all_comp_ids
+    if year and year != 'All':
+        comp_ids = [cid for cid in comp_ids if cid.endswith(year)]
 
-    if not my_comp_ids:
-        # Si no encuentra nada por el ID, intentamos por la fecha (backup de seguridad)
-        if year and year != "All":
-            results_year = results_df[results_df['CompDate'].dt.year == int(year)]
-            my_comp_ids = results_year['Competition'].unique().tolist()
-        
-        # Si después del backup sigue vacío, salimos
-        if not my_comp_ids:
-            return pd.DataFrame()
+    print(len(comp_ids))
 
-    def process_comp(comp_id):
-        # Endpoint de competidores
-        url = f"https://www.worldcubeassociation.org/api/v0/competitions/{comp_id}/competitors"
-        data = fetch_json(url)
+    competitors = {}
+
+    for comp in comp_ids:
+        results = fetch_names_from_comp(comp)
+        # add names to competitors dict
+        for name in results:
+            competitors[name] = competitors.get(name, 0) + 1
+        print(f"Processed competition {comp}, total competitors so far: {len(competitors)}")
+    # Convertir a DataFrame ordenado (Exactamente como lo tenías)
+    df_final = pd.DataFrame(list(competitors.items()), columns=['Name', 'Count'])
+    df_final = df_final.sort_values(by='Count', ascending=False).reset_index(drop=True)
+
+    return df_final
+
+pause_lock = threading.Lock()
+
+def get_wca_neighbours(wca_id, year='All'):
+    results_df = get_wca_results(wca_id)
+    if results_df.empty:
+        return pd.DataFrame()
+
+    comp_ids = results_df['Competition'].unique()
+    year = str(year)
+    
+    if year and year != 'All':
+        comp_ids = [cid for cid in comp_ids if cid.endswith(year)]
+
+    def process_single_comp(comp):
+        comp = comp.strip()
         
-        if isinstance(data, list):
-            # Extraemos nombres, saltando tu WCA ID
-            return [person['name'] for person in data if person.get('wca_id') != wca_id]
-        return []
+        # 1. Si otro hilo está haciendo la pausa de 4s, esperamos aquí a que termine
+        with pause_lock:
+            pass 
+
+        res = fetch_names_from_comp(comp)
+        
+        # 2. Si detectamos el fallo de "0 names"
+        if not res or len(res) == 0:
+            # Bloqueamos el semáforo para que NADIE más pida datos
+            with pause_lock:
+                print(f"🛑 0 names detected in {comp}. STOPPING EVERYTHING for 4s...")
+                time.sleep(6)
+                # Reintentamos tras el parón total
+                res = fetch_names_from_comp(comp)
+            
+        if res and len(res) > 0:
+            print(f"✅ {comp}: {len(res)} names")
+        else:
+            print(f"❌ {comp}: Still 0 names")
+            
+        return res if res else []
 
     all_names = []
-    # Paralelismo para velocidad
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        results_lists = list(executor.map(process_comp, my_comp_ids))
-        
-    for sublist in results_lists:
-        all_names.extend(sublist)
+
+    # Usamos max_workers=3 para que el impacto del parón sea controlado
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        list_of_results = list(executor.map(process_single_comp, comp_ids))
+    
+    for names in list_of_results:
+        all_names.extend(names)
 
     if not all_names:
         return pd.DataFrame()
 
-    # Contar y limpiar
-    df_counts = pd.Series(all_names).value_counts().reset_index()
-    df_counts.columns = ['Name', 'Count']
-    
-    return df_counts.head(50)
+    # Lógica de diccionario y DataFrame
+    competitors = {}
+    for name in all_names:
+        competitors[name] = competitors.get(name, 0) + 1
+        
+    df_final = pd.DataFrame(list(competitors.items()), columns=['Name', 'Count'])
+    df_final = df_final.sort_values(by='Count', ascending=False).reset_index(drop=True)
+
+    return df_final
 
 def get_scrambles(comp_id):
     """
@@ -443,6 +531,8 @@ def get_scrambles(comp_id):
 # rapido para probar la funcion de info
 if __name__ == "__main__":
     wcaid = "2016LOPE37"
+    print(get_wca_neighbours(wcaid, year='All'))
+
 
 
         
