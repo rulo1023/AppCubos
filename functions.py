@@ -344,7 +344,7 @@ def get_wca_neighbours(wca_id, year):
     # 1. Obtenemos las IDs únicas de las competiciones
     all_comp_ids = results_df['Competition'].unique().tolist()
     
-    if year and year != "Todos":
+    if year and year != "All":
         year_str = str(year).strip()
         # Filtramos solo las que TERMINAN exactamente en el año seleccionado
         # Esto evita errores si el año aparece en medio por casualidad
@@ -354,7 +354,7 @@ def get_wca_neighbours(wca_id, year):
 
     if not my_comp_ids:
         # Si no encuentra nada por el ID, intentamos por la fecha (backup de seguridad)
-        if year and year != "Todos":
+        if year and year != "All":
             results_year = results_df[results_df['CompDate'].dt.year == int(year)]
             my_comp_ids = results_year['Competition'].unique().tolist()
         
