@@ -1265,7 +1265,7 @@ def render_neighbours_tab(data):
         st.error("Insufficient data.")
         return
 
-    # Obtenemos los años únicos de tus competiciones
+    # 1. Selección de año
     years = sorted(results['CompDate'].dt.year.unique().astype(int), reverse=True)
     options = ["All"] + [str(y) for y in years]
     
@@ -1274,41 +1274,98 @@ def render_neighbours_tab(data):
 
     if st.button(f"Search neighbours ({selected_year_opt})"):
         with st.spinner("Analyzing competitions..."):
-            
             if selected_year_opt == "All":
-                # Lista para acumular los DataFrames de cada año
                 peopledict = {}
                 for year in years:
-                    # Llamamos a la función por cada año (que ya tienes paralelizada)
+                    # Asumiendo que fn está importado y disponible
                     df_y = fn.get_wca_neighbours(wca_id, year=str(year))
                     for _, row in df_y.iterrows():
                         name = row['Name']
                         count = row['Count']
-                        if name in peopledict:
-                            peopledict[name] += count
-                        else:
-                            peopledict[name] = count
+                        peopledict[name] = peopledict.get(name, 0) + count
                 
                 if peopledict:
-                    # Unimos todos y sumamos los Counts por Nombre
-                    df_total = pd.DataFrame(list(peopledict.items()), columns=['Name', 'Count'])
-                    df_neigh = df_total.groupby('Name')['Count'].sum().reset_index()
+                    df_neigh = pd.DataFrame(list(peopledict.items()), columns=['Name', 'Count'])
                 else:
                     df_neigh = pd.DataFrame()
             else:
-                # Caso de un solo año
                 df_neigh = fn.get_wca_neighbours(wca_id, year=selected_year_opt)
 
         if df_neigh is not None and not df_neigh.empty:
-            # Ordenar de mayor a menor coincidencia
+            # 2. Limpieza de datos
             df_neigh = df_neigh.sort_values(by='Count', ascending=False).reset_index(drop=True)
-            
-            # Quitarte a ti mismo si apareces
             my_name = info.get('person.name') or info.get('name')
-            df_neigh = df_neigh[df_neigh['Name'] != my_name].head(50)
+            df_neigh = df_neigh[df_neigh['Name'] != my_name]
+
+            # --- LÓGICA DE PODIO ---
+            unique_counts = sorted(df_neigh['Count'].unique(), reverse=True)
+            podium_slots = []
+            names_in_podium = []
+            current_total_people = 0
+
+            # Definimos medallas y colores
+            tiers = [
+                {"medal": "🥇", "color": "#FFD700"},
+                {"medal": "🥈", "color": "#C0C0C0"},
+                {"medal": "🥉", "color": "#CD7F32"}
+            ]
+
+            for count_value in unique_counts:
+                if current_total_people >= 3: break
+                
+                people_at_this_level = df_neigh[df_neigh['Count'] == count_value]['Name'].tolist()
+                tier = tiers[len(podium_slots)]
+                
+                podium_slots.append((people_at_this_level, tier["medal"], tier["color"], count_value))
+                names_in_podium.extend(people_at_this_level)
+                current_total_people += len(people_at_this_level)
+
+            # --- RENDERIZADO DE PODIO ---
+            st.subheader(f"Top companions in {selected_year_opt}")
+            cols_podium = st.columns(len(podium_slots))
+
+            for i, (names, medal, color, count) in enumerate(podium_slots):
+                names_display = "<br>".join(names)
+                with cols_podium[i]:
+                    st.markdown(f"""
+                    <div style="background-color: {color}22; padding: 15px; border-radius: 15px; 
+                         border: 2px solid {color}; text-align: center; min-height: 200px; 
+                         display: flex; flex-direction: column; justify-content: center;">
+                        <h1 style="margin:0;">{medal}</h1>
+                        <div style="font-size: 24px; font-weight: 800; margin: 10px 0;">
+                            {count} <span style="font-size: 14px; font-weight: 400;">Comps</span>
+                        </div>
+                        <div style="font-size: 14px; line-height: 1.2;">{names_display}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            st.markdown("---")
+
+            # --- SECCIÓN RESTO DE LA LISTA ---
+            df_others = df_neigh[~df_neigh['Name'].isin(names_in_podium)].head(20)
             
-            st.subheader(f"Top 50 companions in {selected_year_opt}")
-            st.dataframe(df_neigh, use_container_width=True, hide_index=True)
+            if not df_others.empty:
+                with st.expander("See rest of cubers", expanded=True):
+                    current_rank = len(names_in_podium) + 1
+                    max_count = df_neigh['Count'].max()
+                    
+                    others_grouped = df_others.groupby('Count', sort=False)
+                    for count, group in others_grouped:
+                        num_people_in_tie = len(group)
+                        for _, row in group.iterrows():
+                            c1, c2 = st.columns([3, 1])
+                            c1.write(f"{current_rank}. **{row['Name']}**")
+                            c2.caption(f"{row['Count']} matches")
+                            st.progress(row['Count'] / max_count)
+                        current_rank += num_people_in_tie
+
+            # Botón de descarga
+            st.download_button(
+                "Download complete list (CSV)",
+                df_neigh.to_csv(index=False),
+                f"neighbours_wca_{selected_year_opt}.csv",
+                "text/csv"
+            )
         else:
             st.warning("No matches found.")
 
