@@ -64,6 +64,41 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+st.set_page_config(layout="wide") # Opcional: hace que el contenido principal use toda la pantalla
+
+# para sidebar
+st.markdown(
+    """
+    <style>
+        /* Ajustar ancho del Sidebar en PC */
+        [data-testid="stSidebar"] {
+            min-width: 350px !important;
+            max-width: 350px !important;
+        }
+        
+        /* Ajustar ancho del Sidebar en Móvil */
+        @media (max-width: 768px) {
+            [data-testid="stSidebar"] {
+                min-width: 80vw !important; /* 80% del ancho de la pantalla en móvil */
+            }
+        }
+
+        /* Hacer los textos del menú más grandes y legibles */
+        .stRadio div role[aria-label="Go to:"] p {
+            font-size: 1.2rem !important;
+            font-weight: bold;
+        }
+        
+        div[data-testid="stSidebarUserContent"] .stRadio label {
+            font-size: 1.1rem !important;
+            padding-bottom: 10px;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
 # This is defined to use later, as we will be working with event codes but want to show names.
 
 event_dict = {
@@ -736,13 +771,14 @@ def render_scrambles(data):
                     # Título y botón más compactos
                     col_t1, col_t2 = st.columns([1, 2])
                     col_t1.markdown(f"**{label_num}.**")
-                    col_t2.markdown(f'''<a href="{twizzle_url}" target="_blank"><button style="width:100%; font-size:10px; cursor:pointer; border-radius:5px; border:1px solid #ddd; padding: 2px; background-color: #f9f9f9;">🌐 Twizzle</button></a>''', unsafe_allow_html=True)
+                    col_t2.markdown(f'''<a href="{twizzle_url}" target="_blank"><button style="width:100%; font-size:10px; cursor:pointer; border-radius:5px; border:1px solid #ddd; padding: 2px; background-color: #f9f9f9;">See in 🌐 Twizzle</button></a>''', unsafe_allow_html=True)
                     
                     # El CSS de arriba hará que esto salte de línea automáticamente
                     st.code(scram_str, language=None)
                 
                 if item != current_scrambles[-1]:
                     st.markdown("<hr style='margin: 5px 0; opacity: 0.1;'>", unsafe_allow_html=True)
+
 def render_personal_bests_cards(data):
     st.header("🏆 Personal Bests")
     df = data["results"].copy()
