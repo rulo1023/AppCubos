@@ -89,75 +89,98 @@ if not os.path.exists(OUTPUT_FOLDER):
 
 def generate_scramble_image(puzzle_id, scramble_string, unique_filename):
     """
-    Genera la imagen usando tnoodle localmente.
-    Traduce automáticamente los IDs de WCA (222, minx) a los de TNoodle (two, mega).
+    Genera una imagen SVG usando TNoodle.
+    Funciona tanto en local como en Streamlit Cloud.
     """
+
+    import os
+    import subprocess
+    import platform
+    import streamlit as st
+
+    # --- RUTAS ROBUSTAS ---
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    CLI_BIN_PATH = os.path.join(BASE_DIR, "tnoodle", "bin")
+    OUTPUT_FOLDER = os.path.join(BASE_DIR, "scramble_images")
+
+    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+
     full_output_path = os.path.join(OUTPUT_FOLDER, unique_filename)
-    
-    # OPTIMIZACIÓN: Si la imagen ya existe, no la regeneramos
+
+    # Cache: si ya existe la imagen, no regenerar
     if os.path.exists(full_output_path):
         return full_output_path
 
-    # --- MAPEO CRÍTICO WCA -> TNOODLE ---
+    # --- MAPEO WCA -> TNOODLE ---
     tnoodle_mapping = {
-        '333': 'three', 
-        '222': 'two', 
-        '444': 'four', 
-        '555': 'five', 
-        '666': 'six', 
+        '333': 'three',
+        '222': 'two',
+        '444': 'four',
+        '555': 'five',
+        '666': 'six',
         '777': 'seven',
-        '333bf': 'three_ni',    # Blindfolded (No Inspection)
-        '333fm': 'three_fm',    # Fewest Moves
-        '333oh': 'three',       # OH usa el mismo cubo 3x3
-        'minx': 'mega',         # Megaminx
-        'pyram': 'pyra',        # Pyraminx
-        'skewb': 'skewb', 
-        'sq1': 'sq1', 
-        'clock': 'clock', 
+        '333bf': 'three_ni',
+        '333fm': 'three_fm',
+        '333oh': 'three',
+        'minx': 'mega',
+        'pyram': 'pyra',
+        'skewb': 'skewb',
+        'sq1': 'sq1',
+        'clock': 'clock',
         '444bf': 'four_ni',
         '555bf': 'five_ni',
-        '333mbf': 'three_ni'    # Multi-blind usa cubos 3x3
+        '333mbf': 'three_ni'
     }
 
-    # Obtenemos el ID correcto para TNoodle, o usamos el original si no está en la lista
     tnoodle_id = tnoodle_mapping.get(puzzle_id, puzzle_id)
-    
-    # DETECTAR SI ESTAMOS EN WINDOWS O LINUX/CLOUD
-    import platform
-    is_windows = platform.system() == "Windows"
-    
-    executable = "tnoodle.bat" if is_windows else "./tnoodle"
-    
-    # Construir el comando
-    # NOTA: En Linux es mejor usar la ruta absoluta al ejecutable para evitar problemas
+
+    # --- DETECCIÓN DE SISTEMA ---
+    is_windows = platform.system().lower().startswith("win")
+
+    executable = "tnoodle.bat" if is_windows else "tnoodle"
+    executable_path = os.path.join(CLI_BIN_PATH, executable)
+
+    # --- VALIDACIONES ---
+    if not os.path.exists(executable_path):
+        st.error(f"TNoodle no encontrado en: {executable_path}")
+        return None
+
+    # Asegurar permisos en Linux / Cloud
     if not is_windows:
-        executable = os.path.join(CLI_BIN_PATH, "tnoodle")
-        
+        subprocess.run(["chmod", "+x", executable_path], check=False)
+
+    # --- COMANDO ---
     command = [
-        executable, 
+        f"./{executable}" if not is_windows else executable,
         "draw",
         "--puzzle", tnoodle_id,
         "--scramble", scramble_string,
         "--output", full_output_path
     ]
-    
-    try:
-        # En Linux/Cloud necesitamos asegurar permisos de ejecución primero
-        if not is_windows:
-            subprocess.run(["chmod", "+x", executable], check=False)
 
-        # EJECUCIÓN
-        # shell=False es más seguro y predecible en Linux cuando pasamos una lista
+    # --- EJECUCIÓN ---
+    try:
         result = subprocess.run(
-            command, 
-            capture_output=True, 
-            text=True, 
-            shell=is_windows,  # True solo en Windows
-            cwd=CLI_BIN_PATH
+            command,
+            cwd=CLI_BIN_PATH,
+            capture_output=True,
+            text=True,
+            shell=is_windows  # solo Windows necesita shell
         )
-        
+
+        if result.returncode != 0:
+            st.error("Error generando scramble")
+            st.code(result.stderr)
+            return None
+
+        if not os.path.exists(full_output_path):
+            st.error("TNoodle no generó el archivo de salida")
+            return None
+
+        return full_output_path
+
     except Exception as e:
-        st.error(f"Error ejecutando subproceso: {e}")
+        st.error(f"Error ejecutando TNoodle: {e}")
         return None
 
 def render_pr_card(title, time_str, comp_name, date_str):
