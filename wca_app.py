@@ -66,32 +66,36 @@ st.markdown("""
 
 st.set_page_config(layout="wide") # Opcional: hace que el contenido principal use toda la pantalla
 
-# para sidebar
+# Ajustes mejorados para el sidebar
 st.markdown(
     """
     <style>
-        /* Ajustar ancho del Sidebar en PC */
-        [data-testid="stSidebar"] {
-            min-width: 350px !important;
-            max-width: 350px !important;
+        /* 1. Ajustar ancho solo en pantallas grandes (PC) */
+        @media (min-width: 768px) {
+            [data-testid="stSidebar"] {
+                min-width: 350px !important;
+                max-width: 350px !important;
+            }
         }
         
-        /* Ajustar ancho del Sidebar en Móvil */
-        @media (max-width: 768px) {
+        /* 2. En móviles, eliminamos el forzado de ancho para que 
+           el botón de 'X' y el desplazamiento funcionen bien */
+        @media (max-width: 767px) {
             [data-testid="stSidebar"] {
-                min-width: 80vw !important; /* 80% del ancho de la pantalla en móvil */
+                min-width: auto !important;
+                width: 85vw !important; /* Un poco menos del 100% para ver el fondo */
             }
         }
 
-        /* Hacer los textos del menú más grandes y legibles */
+        /* 3. Estética de los textos del menú */
         .stRadio div role[aria-label="Go to:"] p {
-            font-size: 1.2rem !important;
+            font-size: 1.1rem !important;
             font-weight: bold;
         }
         
         div[data-testid="stSidebarUserContent"] .stRadio label {
-            font-size: 1.1rem !important;
-            padding-bottom: 10px;
+            font-size: 1.05rem !important;
+            padding-bottom: 8px;
         }
     </style>
     """,
