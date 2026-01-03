@@ -79,13 +79,6 @@ def render_metric(label, value):
     with st.container(border=True):
         st.metric(label=label, value=value)
 
-# Configure Tnoodle for scramble image generation
-cd = os.getcwd()
-CLI_BIN_PATH = os.path.join(cd, "tnoodle", "bin")
-OUTPUT_FOLDER = os.path.join(os.getcwd(), "scramble_images")
-
-if not os.path.exists(OUTPUT_FOLDER):
-    os.makedirs(OUTPUT_FOLDER)
 
 def generate_scramble_image(puzzle_id, scramble_string, unique_filename):
     """
@@ -138,7 +131,7 @@ def generate_scramble_image(puzzle_id, scramble_string, unique_filename):
     is_windows = platform.system().lower().startswith("win")
 
     executable = "tnoodle.bat" if is_windows else "tnoodle"
-    executable_path = os.path.join(CLI_BIN_PATH, executable)
+    executable_path = CLI_BIN_PATH
 
     # --- VALIDACIONES ---
     if not os.path.exists(executable_path):
