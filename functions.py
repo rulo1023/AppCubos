@@ -1,4 +1,3 @@
-from turtle import st
 import requests
 import pandas as pd
 from datetime import datetime
