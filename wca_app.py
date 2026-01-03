@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from sympy import rem
 import functions as fn
 import numpy as np
 import pydeck as pdk
@@ -12,9 +13,16 @@ import os
 import urllib.parse
 import streamlit.components.v1 as components
 
+st.set_page_config(
+    page_title="MyCubing",
+    page_icon="🎲",
+    layout="wide",  # Esto ayuda a que en PC aproveche todo el ancho
+    initial_sidebar_state="expanded" # Opciones: "auto", "expanded", "collapsed"
+)
+
 # Definimos el nombre y el icono
 APP_NAME = "MyCubing"
-ICON_URL = "https://github.com/rulo1023/AppCubos/blob/master/game_die.png?raw=true" # Reemplaza con la URL real de tu icono en GitHub o servidor
+ICON_URL = "https://github.com/rulo1023/AppCubos/blob/master/game_die.png" # Reemplaza con la URL real de tu icono en GitHub o servidor
 
 pwa_manifest = f"""
 <link rel="manifest" href='data:application/json,{{
@@ -41,13 +49,23 @@ pwa_manifest = f"""
 </script>
 """
 
+st.markdown("""
+    <style>
+        /* Optimizar el padding en computadoras */
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            padding-left: 3rem;
+            padding-right: 3rem;
+        }
+        /* Hacer que el sidebar sea más consistente */
+        [data-testid="stSidebarNav"] {
+            background-size: contain;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 st.markdown(pwa_manifest, unsafe_allow_html=True)
-
-# Inyectar en el header
-st.markdown(pwa_manifest, unsafe_allow_html=True)
-
-
-st.set_page_config(page_title="MyCubing Dashboard", layout="wide", page_icon="🎲")
 
 st.markdown("""
     <style>
@@ -95,49 +113,19 @@ st.markdown("""
         }
         .wca-table td { color: white; }
     }
+            /* Hacer que las imágenes de scramble sean más grandes en móvil */
+    @media (max-width: 767px) {
+        [data-testid="stImage"] img {
+            width: 100% !important;
+            max-width: 300px !important; /* Ajusta este valor a tu gusto */
+            margin: 0 auto;
+            display: block;
+        }
+    }
     </style>
     """, unsafe_allow_html=True)
 
 st.set_page_config(layout="wide") # Opcional: hace que el contenido principal use toda la pantalla
-
-
-
-
-# Ajustes mejorados para el sidebar
-st.markdown(
-    """
-    <style>
-        /* 1. Ajustar ancho solo en pantallas grandes (PC) */
-        @media (min-width: 768px) {
-            [data-testid="stSidebar"] {
-                min-width: 350px !important;
-                max-width: 350px !important;
-            }
-        }
-        
-        /* 2. En móviles, eliminamos el forzado de ancho para que 
-           el botón de 'X' y el desplazamiento funcionen bien */
-        @media (max-width: 767px) {
-            [data-testid="stSidebar"] {
-                min-width: auto !important;
-                width: 85vw !important; /* Un poco menos del 100% para ver el fondo */
-            }
-        }
-
-        /* 3. Estética de los textos del menú */
-        .stRadio div role[aria-label="Go to:"] p {
-            font-size: 1.1rem !important;
-            font-weight: bold;
-        }
-        
-        div[data-testid="stSidebarUserContent"] .stRadio label {
-            font-size: 1.05rem !important;
-            padding-bottom: 8px;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 
 # This is defined to use later, as we will be working with event codes but want to show names.
