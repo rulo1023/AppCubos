@@ -3,12 +3,8 @@ import pandas as pd
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import threading
-import requests
-import pandas as pd
-from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 import pycountry
-from concurrent.futures import ThreadPoolExecutor 
 import streamlit as st
 import time
 
@@ -417,11 +413,6 @@ def get_wca_neighbours_old(wca_id, year):
     return df_final
 
 pause_lock = threading.Lock()
-
-import time
-import threading
-import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
 
 # Bloqueo global
 pause_lock = threading.Lock()

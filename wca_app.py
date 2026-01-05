@@ -20,11 +20,26 @@ st.set_page_config(
     initial_sidebar_state="expanded" # Opciones: "auto", "expanded", "collapsed"
 )
 
-# Definimos el nombre y el icono
 APP_NAME = "MyCubing"
-ICON_URL = "https://github.com/rulo1023/AppCubos/blob/master/game_die.png" # Reemplaza con la URL real de tu icono en GitHub o servidor
+ICON_URL = "https://github.com/rulo1023/AppCubos/blob/master/game_die.png" # Esto no funciona cuando descargo la app en móvil
 
-pwa_manifest = f"""
+st.markdown("""
+    <style>
+        /* Optimizar el padding en computadoras */
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            padding-left: 3rem;
+            padding-right: 3rem;
+        }
+        /* Hacer que el sidebar sea más consistente */
+        [data-testid="stSidebarNav"] {
+            background-size: contain;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+st.markdown(f"""
 <link rel="manifest" href='data:application/json,{{
   "name": "{APP_NAME}",
   "short_name": "{APP_NAME}",
@@ -47,25 +62,7 @@ pwa_manifest = f"""
     }});
   }}
 </script>
-"""
-
-st.markdown("""
-    <style>
-        /* Optimizar el padding en computadoras */
-        .block-container {
-            padding-top: 2rem;
-            padding-bottom: 2rem;
-            padding-left: 3rem;
-            padding-right: 3rem;
-        }
-        /* Hacer que el sidebar sea más consistente */
-        [data-testid="stSidebarNav"] {
-            background-size: contain;
-        }
-    </style>
 """, unsafe_allow_html=True)
-
-st.markdown(pwa_manifest, unsafe_allow_html=True)
 
 st.markdown("""
     <style>
@@ -125,11 +122,6 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.set_page_config(layout="wide") # Opcional: hace que el contenido principal use toda la pantalla
-
-
-# This is defined to use later, as we will be working with event codes but want to show names.
-
 event_dict = {
             "333": "3x3x3", "222": "2x2x2", "444": "4x4x4", 
             "555": "5x5x5", "666": "6x6x6", "777": "7x7x7", "333fm": "3x3x3 Fewest Moves",
@@ -140,107 +132,9 @@ event_dict = {
             "magic": "Magic", "mmagic": "Master Magic",
         } 
 
-### HELPER FUNCTIONS ###
 def render_metric(label, value):
     with st.container(border=True):
         st.metric(label=label, value=value)
-
-
-def generate_scramble_image(puzzle_id, scramble_string, unique_filename):
-    """
-    Genera una imagen SVG usando TNoodle.
-    Funciona tanto en local como en Streamlit Cloud.
-    """
-
-    import os
-    import subprocess
-    import platform
-    import streamlit as st
-
-    # --- RUTAS ROBUSTAS ---
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    CLI_BIN_PATH = os.path.join(BASE_DIR, "tnoodle", "bin")
-    OUTPUT_FOLDER = os.path.join(BASE_DIR, "scramble_images")
-
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-
-    full_output_path = os.path.join(OUTPUT_FOLDER, unique_filename)
-
-    # Cache: si ya existe la imagen, no regenerar
-    if os.path.exists(full_output_path):
-        return full_output_path
-
-    # --- MAPEO WCA -> TNOODLE ---
-    tnoodle_mapping = {
-        '333': 'three',
-        '222': 'two',
-        '444': 'four',
-        '555': 'five',
-        '666': 'six',
-        '777': 'seven',
-        '333bf': 'three_ni',
-        '333fm': 'three_fm',
-        '333oh': 'three',
-        'minx': 'mega',
-        'pyram': 'pyra',
-        'skewb': 'skewb',
-        'sq1': 'sq1',
-        'clock': 'clock',
-        '444bf': 'four_ni',
-        '555bf': 'five_ni',
-        '333mbf': 'three_ni'
-    }
-
-    tnoodle_id = tnoodle_mapping.get(puzzle_id, puzzle_id)
-
-    # --- DETECCIÓN DE SISTEMA ---
-    is_windows = platform.system().lower().startswith("win")
-
-    executable = "tnoodle.bat" if is_windows else "tnoodle"
-    executable_path = os.path.join(CLI_BIN_PATH, executable)
-
-    # --- VALIDACIONES ---
-    if not os.path.exists(executable_path):
-        st.error(f"TNoodle no encontrado en: {executable_path}")
-        return None
-
-    # Asegurar permisos en Linux / Cloud
-    if not is_windows:
-        subprocess.run(["chmod", "+x", executable_path], check=False)
-
-    # --- COMANDO ---
-    command = [
-        f"./{executable}" if not is_windows else executable,
-        "draw",
-        "--puzzle", tnoodle_id,
-        "--scramble", scramble_string,
-        "--output", full_output_path
-    ]
-
-    # --- EJECUCIÓN ---
-    try:
-        result = subprocess.run(
-            command,
-            cwd=CLI_BIN_PATH,
-            capture_output=True,
-            text=True,
-            shell=is_windows  # solo Windows necesita shell
-        )
-
-        if result.returncode != 0:
-            st.error("Error generando scramble")
-            st.code(result.stderr)
-            return None
-
-        if not os.path.exists(full_output_path):
-            st.error("TNoodle no generó el archivo de salida")
-            return None
-
-        return full_output_path
-
-    except Exception as e:
-        st.error(f"Error ejecutando TNoodle: {e}")
-        return None
 
 def render_pr_card(title, time_str, comp_name, date_str):
     with st.container(border=True):
@@ -275,31 +169,6 @@ def load_all_data(wca_id):
         return None
 
 ### RENDERING FUNCTIONS ###
-def render_summary(data, wca_id): # legacy version
-    info = data["info"]
-    iso_code = info.get('person.country.iso2', 'N/A')
-    flag = fn.get_flag_emoji(iso_code)
-    
-    st.header(f"{flag} {info.get('person.name', wca_id)}")
-    st.caption(f"WCA ID: {wca_id}")
-    st.divider()
-
-    st.subheader("Activity")
-    c1, c2 = st.columns(2)
-    with c1: render_metric("🗓️ Competitions", info.get('competition_count', len(data['results']['Competition'].unique())))
-    
-    last_comp = "N/A"
-    if not data['results'].empty:
-        last_comp = data['results'].iloc[0]['CompName']
-        
-    with c2: render_metric("🏟️ Last Comp", last_comp)
-
-    st.subheader("Medals")
-    m1, m2, m3 = st.columns(3)
-    with m1: render_metric("🥇 Gold", info.get('medals.gold', 0))
-    with m2: render_metric("🥈 Silver", info.get('medals.silver', 0))
-    with m3: render_metric("🥉 Bronze", info.get('medals.bronze', 0))
-
 def render_summary_enhanced(data, wca_id):
     info = data["info"]
     df = data["results"]
@@ -526,164 +395,6 @@ def render_competitions_tab(data):
         
     with tab3:
         render_activity_heatmap(data)
-
-def render_scrambles_old(data):
-    st.header("🔀 Scrambles from your competitions")
-
-    twizzle_puzzle_map = {
-    '333': '3x3x3', '222': '2x2x2', '444': '4x4x4', '555': '5x5x5', '666': '6x6x6', '777': '7x7x7',
-    '333oh': '3x3x3', '333bf': '3x3x3', '333fm': '3x3x3',
-    'minx': 'megaminx', 'pyram': 'pyraminx', 'skewb': 'skewb', 'clock': 'clock', 'sq1': 'square1',
-    '444bf': '4x4x4', '555bf': '5x5x5', '333mbf': '3x3x3'
-}
-    df = data["results"]
-    if df.empty: return
-
-    # --- 1. Selector de Competición ---
-    comps_df = df[['CompName', 'CompDate', 'Competition']].drop_duplicates().sort_values(by='CompDate', ascending=False)
-    selected_comp_name = st.selectbox("Select Competition:", comps_df['CompName'])
-    
-    if not selected_comp_name: return
-
-    comp_id = comps_df[comps_df['CompName'] == selected_comp_name].iloc[0]['Competition']
-
-    # --- 2. Carga de Scrambles Reales ---
-    # Usamos la nueva función limpia
-    scramble_data = fn.get_scrambles(comp_id)
-
-    if not scramble_data:
-        st.warning("No public scrambles available for this competition yet.")
-        return
-
-    st.divider()
-
-    # --- 3. Selectores de Evento y Ronda ---
-    col_sel1, col_sel2 = st.columns(2)
-    
-    with col_sel1:
-        # Eventos disponibles en el JSON de scrambles
-        available_events = list(scramble_data.keys())
-        # Mapeo a nombres bonitos
-        event_options = {event_dict.get(code, code): code for code in available_events}
-        selected_event_name = st.selectbox("Select Event:", list(event_options.keys()))
-        selected_event_code = event_options[selected_event_name]
-
-    with col_sel2:
-        # Rondas disponibles para ese evento
-        available_rounds = list(scramble_data[selected_event_code].keys())
-        # Mapeo simple para nombres de ronda (d, 1, 2, 3, f...)
-        round_map = {'1': 'First Round', '2': 'Second Round', '3': 'Semi-final', 'f': 'Final', 'c': 'Combined Final', 'd': 'Combined First Round'}
-        round_options = {round_map.get(r, f"Round {r}"): r for r in available_rounds}
-        
-        selected_round_name = st.selectbox("Select Round:", list(round_options.keys()))
-        selected_round_code = round_options[selected_round_name]
-
-    # Datos finales a renderizar (Diccionario de grupos: {'A': [...], 'B': [...]})
-    groups_data = scramble_data[selected_event_code][selected_round_code]
-
-    # Mapeo para TNoodle (nombre de archivo)
-    tnoodle_code_mapping = {
-        '333': 'three', '222': 'two', '444': 'four', '555': 'five', '666': 'six', '777': 'seven',
-        '333oh': 'three', '333bf': 'three_ni', '444bf': 'four_ni', '555bf': 'five_ni',
-        '333fm': 'three_fm', 'pyram': 'pyra', 'sq1': 'sq1', 'minx': 'mega', 
-        'clock': 'clock', 'skewb': 'skewb', '333mbf': 'three_ni'
-    }
-    tnoodle_event = tnoodle_code_mapping.get(selected_event_code, selected_event_code)
-
-    st.divider()
-
-    # --- 4. Renderizado Dinámico de Grupos ---
-    # Creamos un diccionario nuevo para manejar los grupos reales y los virtuales
-    processed_groups = {}
-
-    for group_id in sorted(groups_data.keys()):
-        scramble_list = groups_data[group_id]
-        
-        if selected_event_code == '333mbf':
-            # Lógica para separar el Grupo A en subgrupos (A.1, A.2...)
-            current_subgroup_idx = 1
-            last_num = -1
-            
-            for item in scramble_list:
-                scrambles_split = item['scramble'].split('\n')
-                for sub_idx, scram in enumerate(scrambles_split):
-                    current_num = sub_idx + 1
-                    
-                    # Si detectamos un reinicio (ej: pasamos de 33 a 1)
-                    if current_num <= last_num:
-                        current_subgroup_idx += 1
-                    
-                    # Creamos el nombre del grupo virtual: "A.1", "A.2", etc.
-                    virtual_group_id = f"{group_id}.{current_subgroup_idx}"
-                    
-                    if virtual_group_id not in processed_groups:
-                        processed_groups[virtual_group_id] = []
-                    
-                    processed_groups[virtual_group_id].append({
-                        'num': current_num,
-                        'scramble': scram,
-                        'is_extra': False
-                    })
-                    last_num = current_num
-        else:
-            # Para eventos normales, mantenemos el grupo tal cual
-            processed_groups[group_id] = scramble_list
-
-    # --- RENDERIZADO FINAL ---
-    for g_id in sorted(processed_groups.keys()):
-        current_scrambles = processed_groups[g_id]
-        
-        with st.container(border=True):
-            st.subheader(f"📂 Group {g_id}")
-            
-            for item in current_scrambles:
-                num = item['num']
-                scram_str = item['scramble']
-                is_extra = item['is_extra']
-                label_num = f"E{num}" if is_extra else f"{num}"
-                
-                # 1. Generar URL de Twizzle
-                puzzle_name = twizzle_puzzle_map.get(selected_event_code, '3x3x3')
-                # Limpiamos saltos de línea y formateamos para URL
-                clean_scram = scram_str.replace('\n', ' ').replace(' ', '+').replace("'", "%27")
-                twizzle_url = f"https://alpha.twizzle.net/edit/?setup-alg={clean_scram}&puzzle={puzzle_name}"
-                
-                # 2. Generar imagen (tu lógica existente)
-                filename = f"{selected_event_code}_{selected_round_code}_{g_id}_{label_num}.svg"
-                if selected_event_code == 'minx':
-                    scram_str_mod = scram_str.replace('\n', ' ')
-                    img_path = generate_scramble_image(selected_event_code, scram_str_mod, filename)
-                else:
-                    img_path = generate_scramble_image(selected_event_code, scram_str, filename)
-                
-                # 3. Layout de Fila
-                c_img, c_text = st.columns([1, 4]) 
-                
-                with c_img:
-                    if img_path and os.path.exists(img_path):
-                        st.image(img_path, width=150)
-                    else:
-                        st.warning("Img error")
-                
-                with c_text:
-                    # Título y botón de Twizzle en la misma línea
-                    col_t1, col_t2 = st.columns([1, 4])
-                    with col_t1:
-                        st.markdown(f"**{label_num}.**")
-                    with col_t2:
-                        st.markdown(f'<a href="{twizzle_url}" target="_blank" style="text-decoration:none;">'
-                                    f'<button style="font-size:10px; cursor:pointer; border-radius:5px; border:1px solid #ddd;">'
-                                    f'🌐 View in Twizzle</button></a>', unsafe_allow_html=True)
-                    
-                    st.code(scram_str, language=None)
-                
-                if item != current_scrambles[-1]:
-                    st.markdown("<hr style='margin: 5px 0; opacity: 0.1;'>", unsafe_allow_html=True)
-
-import streamlit as st
-import streamlit.components.v1 as components
-import urllib.parse
-import os
 
 def render_scrambles(data):
     # --- CSS PARA ARREGLAR MÓVILES ---
@@ -1192,18 +903,43 @@ def render_competition_map(data):
 
 def render_progression(data):
     st.header("📈 Personal Best Progression")
+    
+    # Check for data
+    if 'results' not in data:
+        st.warning("No results found.")
+        return
+
     df = data["results"].copy()
-    if df.empty: return
+    if df.empty: 
+        st.warning("No data available.")
+        return
 
-    # Diccionario de eventos disponibles
-    available_events = [e for e in event_dict.keys() if e in df['Event'].unique()]
-    opts = {event_dict[e]: e for e in available_events}
-
-    # --- SECCIÓN 1: GRÁFICO DE PROGRESIÓN ---
+    # Dictionary of available events in the user's data
+    # (assuming event_dict is available globally or imported from functions)
+    # If event_dict is not in scope, we define a basic one or use the keys from df
+    # For safety, I will assume event_dict exists as in previous context, 
+    # but I'll add a fallback just in case.
+    event_dict_local = {
+        '333': '3x3x3', '222': '2x2x2', '444': '4x4x4', '555': '5x5x5',
+        '666': '6x6x6', '777': '7x7x7', '333bf': '3x3x3 Blindfolded',
+        '333fm': '3x3x3 Fewest Moves', '333oh': '3x3x3 One-Handed',
+        'clock': 'Clock', 'minx': 'Megaminx', 'pyram': 'Pyraminx',
+        'skewb': 'Skewb', 'sq1': 'Square-1', '444bf': '4x4x4 Blindfolded',
+        '555bf': '5x5x5 Blindfolded', '333mbf': '3x3x3 Multi-Blind'
+    }
+    
+    # Filter available events
+    available_events_codes = [e for e in event_dict_local.keys() if e in df['Event'].unique()]
+    
+    # Map Name -> Code
+    opts = {event_dict_local.get(e, e): e for e in available_events_codes}
+    
+    # --- SECTION 1: EVOLUTION GRAPH (Single Selection Only) ---
     st.subheader("Evolution Graph")
+    
     c1, c2 = st.columns([3, 1])
     with c1:
-        # Usamos key="event_graph" para independizarlo
+        # "All Events" removed here as requested
         sel_name_graph = st.selectbox("Select Event (Graph):", list(opts.keys()), key="event_graph")
     with c2:
         type_sel_graph = st.selectbox("Type (Graph):", ["Single", "Average"], key="type_graph")
@@ -1211,76 +947,178 @@ def render_progression(data):
     sel_code_graph = opts[sel_name_graph]
     col_target_graph = 'best_cs' if type_sel_graph == "Single" else 'avg_cs'
     
+    # Filter Data
     dfe_graph = df[(df['Event'] == sel_code_graph) & (df[col_target_graph] > 0)].copy()
     
     if not dfe_graph.empty:
         dfe_graph = dfe_graph.sort_values(by='CompDate')
-        dfe_graph['pr_so_far'] = dfe_graph[col_target_graph].cummin()
-        pr_history = dfe_graph[dfe_graph[col_target_graph] == dfe_graph['pr_so_far']].drop_duplicates(subset=[col_target_graph])
-        
-        is_fmc_g = sel_code_graph == "333fm"
-        div_g = 1 if (is_fmc_g and type_sel_graph == "Single") else 100
 
+        # --- MULTI-BLIND LOGIC (Points) ---
+        is_mbld = (sel_code_graph == "333mbf")
+        
+        if is_mbld:
+            # WCA Modern Format: 0DDTTTTTMM -> DD is (99 - Points).
+            # We calculate Points = 99 - DD.
+            # Example: 97... -> 97 diff -> 2 Points.
+            dfe_graph['plot_value'] = dfe_graph[col_target_graph].apply(
+                lambda x: (99 - (x // 10000000)) if x > 100000000 else 0
+            )
+            # For Points, Higher is Better (cummax)
+            dfe_graph['pr_so_far'] = dfe_graph['plot_value'].cummax()
+            y_label = "Points (Solved - Missed)"
+            marker_color = '#4B4BFF'
+            
+            # Keep rows where PB improves (Points increase)
+            pr_history = dfe_graph[dfe_graph['plot_value'] == dfe_graph['pr_so_far']].drop_duplicates(subset=['plot_value'])
+        
+        else:
+            # --- STANDARD LOGIC (Time/Moves) ---
+            is_fmc = (sel_code_graph == "333fm")
+            div = 1 if (is_fmc and type_sel_graph == "Single") else 100
+
+            dfe_graph['plot_value'] = dfe_graph[col_target_graph] / div
+            
+            # For Time/Moves, Lower is Better (cummin)
+            dfe_graph['pr_so_far'] = dfe_graph[col_target_graph].cummin()
+            y_label = "Moves" if is_fmc else "Time (s)"
+            marker_color = '#FF4B4B'
+            
+            # Keep rows where PB improves (Time decreases)
+            pr_history = dfe_graph[dfe_graph[col_target_graph] == dfe_graph['pr_so_far']].drop_duplicates(subset=[col_target_graph])
+
+        # Plot
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=pr_history['CompDate'], y=pr_history[col_target_graph] / div_g, 
-                                 mode='lines+markers', name='Personal Best', line=dict(color='#FF4B4B', shape='hv')))
+        fig.add_trace(go.Scatter(
+            x=pr_history['CompDate'], 
+            y=pr_history['plot_value'], 
+            mode='lines+markers', 
+            name='Personal Best', 
+            line=dict(color=marker_color, shape='hv')
+        ))
+        
+        fig.update_layout(
+            title=f"{sel_name_graph} Progression",
+            yaxis_title=y_label,
+            margin=dict(l=20, r=20, t=40, b=20),
+            height=350
+        )
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.warning("No data for this selection.")
+        st.info("No data available for this selection.")
 
-    # --- SECCIÓN 2: COMPARATIVA ANUAL INDEPENDIENTE ---
     st.divider()
-    st.subheader("🗓️ Year-over-Year Comparison")
+
+    # --- SECTION 2: YEAR-OVER-YEAR COMPARISON ---
+    st.markdown("### 🗓️ Year-over-Year Comparison")
     
-    # Selectores independientes para la comparativa
     cc1, cc2 = st.columns([3, 1])
     with cc1:
-        sel_name_comp = st.selectbox("Select Event (Comparison):", list(opts.keys()), key="event_comp")
+        # "All Events" added here
+        comp_options = ["All Events"] + list(opts.keys())
+        sel_name_comp = st.selectbox("Select Event (Comparison):", comp_options, key="event_comp")
     with cc2:
         type_sel_comp = st.selectbox("Type (Comparison):", ["Single", "Average"], key="type_comp")
 
-    sel_code_comp = opts[sel_name_comp]
-    col_target_comp = 'best_cs' if type_sel_comp == "Single" else 'avg_cs'
-    
-    dfe_comp = df[(df['Event'] == sel_code_comp) & (df[col_target_comp] > 0)].copy()
-
-    if not dfe_comp.empty:
-        dfe_comp['Year'] = dfe_comp['CompDate'].dt.year
-        yearly_best = dfe_comp.groupby('Year')[col_target_comp].min().reset_index()
-        available_years = sorted(yearly_best['Year'].unique(), reverse=True)
-
-        if len(available_years) < 2:
-            st.info("Participate in at least two different years to compare.")
-        else:
-            y_col1, y_col2 = st.columns(2)
-            with y_col1:
-                year1 = st.selectbox("Year 1 (Base):", available_years, index=1, key="y1")
-            with y_col2:
-                year2 = st.selectbox("Year 2 (Target):", available_years, index=0, key="y2")
-
-            val1 = yearly_best[yearly_best['Year'] == year1][col_target_comp].values[0]
-            val2 = yearly_best[yearly_best['Year'] == year2][col_target_comp].values[0]
-
-            # Formateo y Cálculos
-            is_fmc_c = sel_code_comp == "333fm"
-            div_c = 1 if (is_fmc_c and type_sel_comp == "Single") else 100
-            
-            diff = (val1 - val2) / div_c
-            percent = ((val1 - val2) / val1) * 100
-            
-            t1_str = fn.format_wca_time(val1, event_code=sel_code_comp)
-            t2_str = fn.format_wca_time(val2, event_code=sel_code_comp)
-
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric(f"PB {year1}", t1_str)
-            m2.metric(f"PB {year2}", t2_str)
-            
-            unit = "moves" if is_fmc_c else "sec"
-            # El delta muestra la mejora (verde si el tiempo baja)
-            m3.metric("Improvement", f"{diff:.2f} {unit}", delta=f"{diff:.2f}", delta_color="normal")
-            m4.metric("Percentage", f"{percent:.1f}%", delta=f"{percent:.1f}%", delta_color="normal")
+    # Determine which events to process
+    if sel_name_comp == "All Events":
+        events_to_compare = available_events_codes
     else:
-        st.warning("No data for this selection.")
+        events_to_compare = [opts[sel_name_comp]]
+
+    # Select Years (Global for the loop)
+    # We need to find all available years across the dataset to populate the dropdown
+    df['Year'] = df['CompDate'].dt.year
+    all_years = sorted(df['Year'].unique(), reverse=True)
+    
+    if len(all_years) < 2:
+        st.info("You need results in at least two different years to compare.")
+        return
+
+    y_col1, y_col2 = st.columns(2)
+    with y_col1:
+        year1 = st.selectbox("Year 1 (Base):", all_years, index=min(1, len(all_years)-1), key="y1")
+    with y_col2:
+        year2 = st.selectbox("Year 2 (Target):", all_years, index=0, key="y2")
+
+# --- LOOP THROUGH EVENTS ---
+    found_any = False
+    
+    for code in events_to_compare:
+        col_target = 'best_cs' if type_sel_comp == "Single" else 'avg_cs'
+        
+        # Filter for specific event
+        sub_df = df[(df['Event'] == code) & (df[col_target] > 0)]
+        
+        if sub_df.empty:
+            continue
+
+        # Get best result for Year 1 and Year 2
+        best_y1 = sub_df[sub_df['Year'] == year1][col_target].min()
+        best_y2 = sub_df[sub_df['Year'] == year2][col_target].min()
+
+        if pd.isna(best_y1) or pd.isna(best_y2):
+            continue
+
+        found_any = True
+        event_name = event_dict_local.get(code, code)
+        is_mbld_comp = (code == "333mbf")
+        
+        if is_mbld_comp:
+            # Lógica de Puntos para MBLD
+            p1 = (99 - (best_y1 // 10000000)) if best_y1 > 100000000 else 0
+            p2 = (99 - (best_y2 // 10000000)) if best_y2 > 100000000 else 0
+            diff = p2 - p1
+            percent = ((p2 - p1) / p1 * 100) if p1 > 0 else 100.0 
+            val1_str = f"{p1} pts"
+            val2_str = f"{p2} pts"
+            delta_val = f"{diff} pts"
+        
+        else:
+            # Lógica para Tiempos y FMC
+            is_fmc_c = (code == "333fm")
+            # En WCA, los tiempos están en centésimas (cs)
+            diff_cs = int(best_y1 - best_y2) 
+            percent = ((best_y1 - best_y2) / best_y1) * 100
+            
+            val1_str = fn.format_wca_time(best_y1, event_code=code)
+            val2_str = fn.format_wca_time(best_y2, event_code=code)
+
+            # FORMATEO DE LA MEJORA (Improvement)
+            if is_fmc_c:
+                delta_val = f"{diff_cs} moves" if type_sel_comp == "Single" else f"{diff_cs/100:.2f} moves"
+            else:
+                # Si la mejora es de 60s o más, formateamos como M:SS.cc
+                abs_diff = abs(diff_cs)
+                if abs_diff >= 6000:
+                    mins = abs_diff // 6000
+                    secs = (abs_diff % 6000) // 100
+                    cents = abs_diff % 100
+                    # Añadimos signo negativo si empeoró (best_y2 > best_y1)
+                    sign = "-" if diff_cs < 0 else ""
+                    delta_val = f"{sign}{mins}:{secs:02d}.{cents:02d}s"
+                else:
+                    delta_val = f"{diff_cs/100:.2f}s"
+
+        # Renderizado de métricas
+        if sel_name_comp == "All Events":
+            st.markdown(f"#### {event_name}")
+            
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric(f"PB {year1}", val1_str)
+        m2.metric(f"PB {year2}", val2_str)
+        
+        # La delta se muestra verde si es positiva (mejora)
+        # En tiempos, diff_cs es positivo si el tiempo bajó.
+        m3.metric("Improvement", delta_val, delta=delta_val)
+        m4.metric("Percentage", f"{percent:.1f}%", delta=f"{percent:.1f}%")
+        
+        if sel_name_comp == "All Events":
+            st.divider()
+
+    if not found_any and sel_name_comp == "All Events":
+        st.info(f"No events found with data in both {year1} and {year2}.")
+    elif not found_any and sel_name_comp != "All Events":
+        st.info(f"No data for {sel_name_comp} in both selected years.")
 
 def render_neighbours_tab(data):
     st.header("🤝 WCA Neighbours")
@@ -1367,7 +1205,7 @@ def render_neighbours_tab(data):
                         <div style="font-size: 14px; line-height: 1.2;">{names_display}</div>
                     </div>
                     """, unsafe_allow_html=True)
-
+                    
             st.markdown("---")
 
             # --- SECCIÓN RESTO DE LA LISTA ---
