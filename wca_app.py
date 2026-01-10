@@ -1236,6 +1236,80 @@ def render_neighbours_tab(data):
         else:
             st.warning("No matches found.")
 
+def render_organizer_tab(data):
+    # Intentamos obtener el nombre real del usuario desde la info cargada
+    info = data.get("info", {})
+    # Flattened dict keys: 'person.name' suele ser la clave tras aplanar
+    user_name = info.get("person.name") 
+    
+    if not user_name:
+        st.error("Could not identify the organizer name from the WCA ID.")
+        return
+
+    st.header(f"📋 Competitions organized by {user_name}")
+
+    # Llamamos a la función de búsqueda (esto puede tardar unos segundos, por eso el spinner)
+    with st.spinner(f"Searching organized competitions for {user_name}..."):
+        # Usamos cache de sesión simple para no buscar cada vez que cambias de pestaña pequeña
+        if 'organized_df' not in st.session_state or st.session_state.get('org_name') != user_name:
+            df_org = fn.get_organized_competitions(user_name)
+            st.session_state['organized_df'] = df_org
+            st.session_state['org_name'] = user_name
+        else:
+            df_org = st.session_state['organized_df']
+
+    if df_org.empty:
+        st.warning(f"No organized competitions found for '{user_name}'. Check if the WCA name matches exactly.")
+        return
+
+    # 1. Total arriba
+    st.metric("Total Organized", len(df_org))
+    st.divider()
+
+    # 2. Mosaico por años
+    # Obtenemos años únicos ordenados descendentemente
+    years = sorted(df_org['Year'].unique(), reverse=True)
+
+    # 2. Mosaico por años
+    # Obtenemos años únicos ordenados descendentemente
+    years = sorted(df_org['Year'].unique(), reverse=True)
+
+    for year in years:
+        # Filtramos primero para poder contar
+        comps_year = df_org[df_org['Year'] == year]
+        count_year = len(comps_year)
+        
+        # Mostramos Año y Cantidad entre paréntesis
+        st.subheader(f"{year} ({count_year})")
+        
+        # Creamos un grid de 3 columnas para las tarjetas
+        cols = st.columns(3)
+        for idx, (_, row) in enumerate(comps_year.iterrows()):
+            with cols[idx % 3]:
+                with st.container(border=True):
+                    st.markdown(f"**{row['Nombre']}**")
+                    st.caption(f"📍 {row['city']}, {row['country']}")
+                    
+                    # --- LÓGICA DE FECHAS (Incluye la mejora de la respuesta anterior) ---
+                    start = row['date_start']
+                    end = row['date_end']
+                    days = row['no_days']
+
+                    if days > 1:
+                        if start.month == end.month:
+                            date_str = f"{start.strftime('%d')} - {end.strftime('%d %b')}"
+                        else:
+                            date_str = f"{start.strftime('%d %b')} - {end.strftime('%d %b')}"
+                    else:
+                        date_str = start.strftime('%d %b')
+                    
+                    st.text(f"📅 {date_str}")
+                    # ---------------------------------------------------------------------
+                    
+                    # Link a la web de la WCA
+                    wca_url = f"https://www.worldcubeassociation.org/competitions/{row['id']}"
+                    st.markdown(f"[View on WCA]({wca_url})")
+
 ####### STREAMLIT APP MAIN LOGIC ###########
 
 st.sidebar.title("🎲 MyCubing")
@@ -1248,7 +1322,8 @@ selection = st.sidebar.radio("Go to:", [
     "📊 Statistics", 
     "📈 Progression",
     "🔀 Scrambles",
-    "🤝 WCA Neighbours"
+    "🤝 WCA Neighbours",
+    "📋 Organized comps"
 ])
 
 if wca_id_input:
@@ -1270,6 +1345,8 @@ if wca_id_input:
             render_scrambles(data)
         elif selection == "🤝 WCA Neighbours":
             render_neighbours_tab(data)
+        elif selection == "📋 Organized comps": 
+            render_organizer_tab(data)
         name = data['info'].get('person.name', wca_id_input)
         st.sidebar.success(f"Loaded: {name}")
     else:

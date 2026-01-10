@@ -529,10 +529,69 @@ def get_scrambles(comp_id):
 
     return structured_data
 
+def get_organized_competitions(name_to_search):
+    """
+    Busca todas las competiciones donde 'name_to_search' aparece como organizador.
+    Descarga en paralelo las páginas de la API para mayor velocidad.
+    """
+    all_competitions = []
+
+    # Función auxiliar para descargar una página específica
+    def fetch_page(i):
+        url = f"https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/master/api/competitions-page-{i}.json"
+        return fetch_json(url)
+
+    # El snippet original iteraba 18 páginas. Ponemos 20 por seguridad.
+    # Usamos ThreadPoolExecutor para hacer las peticiones en paralelo.
+    pages_to_check = range(1, 21)
+    
+    results = []
+    # Reutilizamos la lógica de threads para velocidad
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(executor.map(fetch_page, pages_to_check))
+
+    for data in results:
+        if data and 'items' in data:
+            for competition in data['items']:
+                # Extraemos los nombres de los organizadores
+                organisers_names = [org["name"] for org in competition.get("organisers", [])]
+                
+                # Verificamos si el nombre está en la lista
+                if name_to_search in organisers_names:
+                    comp_data = {
+                        "Nombre": competition.get("name"),
+                        "id": competition.get("id"),
+                        "city": competition.get("city"),
+                        "country": competition.get("country"),
+                        "date_start": competition.get("date", {}).get("from"),
+                        "date_end": competition.get("date", {}).get("till"),
+                        "no_days": competition.get("date", {}).get("numberOfDays")
+                    }
+                    all_competitions.append(comp_data)
+
+    df = pd.DataFrame(all_competitions)
+
+    if not df.empty:
+        # Añadimos la columna "Numero"
+        df.insert(0, "Numero", range(1, len(df) + 1))
+        
+        # Convertimos AMBAS fechas a datetime
+        df['date_start'] = pd.to_datetime(df['date_start'])
+        df['date_end'] = pd.to_datetime(df['date_end'])  # <--- AÑADIR ESTA LÍNEA
+        
+        df['Year'] = df['date_start'].dt.year
+        # Ordenamos por fecha descendente
+        df = df.sort_values(by='date_start', ascending=False)
+
+    return df
+
 # rapido para probar la funcion de info
 if __name__ == "__main__":
     wcaid = "2016LOPE37"
-    print(get_wca_neighbours(wcaid, year='All'))
+    # get the name of the person
+    name = get_wcaid_info(wcaid).get("person.name")
+
+    print(name)
 
 
 
