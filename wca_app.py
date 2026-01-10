@@ -413,7 +413,7 @@ def render_scrambles(data):
         </style>
     """, unsafe_allow_html=True)
 
-    # --- 1. CONFIGURACIÓN Y MAPEOS (Igual que antes) ---
+    # --- 1. CONFIGURACIÓN Y MAPEOS ---
     twizzle_puzzle_map = {
         '333': '3x3x3', '222': '2x2x2', '444': '4x4x4', '555': '5x5x5', '666': '6x6x6', '777': '7x7x7',
         '333oh': '3x3x3', '333bf': '3x3x3', '333fm': '3x3x3',
@@ -469,12 +469,11 @@ def render_scrambles(data):
     view_type = st.segmented_control("View:", ["2D", "3D"], default="2D")
     st.divider()
 
-    # --- 5. PROCESAMIENTO DE GRUPOS (Simplificado para el ejemplo) ---
+    # --- 5. PROCESAMIENTO DE GRUPOS ---
     groups_data = scramble_data[selected_event_code][selected_round_code]
     processed_groups = {}
     for group_id, scramble_list in groups_data.items():
         if selected_event_code == '333mbf':
-            # ... (tu lógica de MBF se mantiene igual)
             pass 
         else:
             processed_groups[group_id] = scramble_list
@@ -493,32 +492,47 @@ def render_scrambles(data):
                 puzzle_wca = wca_event_map.get(selected_event_code, '333')
                 twizzle_url = f"https://alpha.twizzle.net/edit/?setup-alg={urllib.parse.quote(scram_str)}&puzzle={puzzle_twizzle}"
                 
-                # Ajustamos el ratio de columnas para que el texto tenga más espacio [1, 3]
-                c_img, c_text = st.columns([1, 3]) 
+                # CAMBIO 1: Ajustamos columnas. Damos un poco más de peso a la imagen (1.2)
+                c_img, c_text = st.columns([1.2, 3]) 
                 
                 with c_img:
+                    # CAMBIO 2: CSS Responsive
+                    # - width/height 100% para ocupar todo el 'iframe'
+                    # - display flex en body para centrar
                     html_code = f"""
                     <script src="https://cdn.cubing.net/v0/js/scramble-display" type="module"></script>
                     <style>
-                        body {{ margin: 0; background: transparent; display: flex; justify-content: center; align-items: center; overflow: hidden; }}
-                        scramble-display {{ width: 120px; height: 120px; --scramble-display-bg-color: transparent; }}
+                        body {{ 
+                            margin: 0; 
+                            background: transparent; 
+                            display: flex; 
+                            justify-content: center; 
+                            align-items: center; 
+                            height: 100vh; /* Ocupa toda la altura del iframe */
+                            overflow: hidden; 
+                        }}
+                        scramble-display {{ 
+                            width: 100%; 
+                            height: 100%; 
+                            /* Evita que se haga monstruoso en monitores 4k, pero llena el móvil */
+                            max-width: 100%; 
+                            --scramble-display-bg-color: transparent; 
+                        }}
                     </style>
                     <scramble-display event="{puzzle_wca}" scramble="{scram_str}" visualization="{view_type}"></scramble-display>
                     """
-                    components.html(html_code, height=130)
+                    # CAMBIO 3: Aumentamos height del componente de 130 a 220
+                    # Esto permite que la imagen crezca en vertical cuando esté en móvil.
+                    components.html(html_code, height=220)
                 
                 with c_text:
-                    # Título y botón más compactos
                     col_t1, col_t2 = st.columns([1, 2])
                     col_t1.markdown(f"**{label_num}.**")
                     col_t2.markdown(f'''<a href="{twizzle_url}" target="_blank"><button style="width:100%; font-size:10px; cursor:pointer; border-radius:5px; border:1px solid #ddd; padding: 2px; background-color: #f9f9f9;">See in 🌐 Twizzle</button></a>''', unsafe_allow_html=True)
-                    
-                    # El CSS de arriba hará que esto salte de línea automáticamente
                     st.code(scram_str, language=None)
                 
                 if item != current_scrambles[-1]:
                     st.markdown("<hr style='margin: 5px 0; opacity: 0.1;'>", unsafe_allow_html=True)
-
 def render_personal_bests_cards(data):
     st.header("🏆 Personal Bests")
     df = data["results"].copy()
@@ -683,18 +697,18 @@ def render_activity_heatmap(data):
 
     # 1. Selector de escala de colores
     colores_dict = {
-        "Azules 🔵": "Blues",
-        "Rojos 🔴": "Reds",
-        "Verdes 🟢": "Greens",
-        "Morados 🟣": "Purples",
-        "Naranja y Sol ☀️": "YlOrRd",
-        "Glaciar ❄️": "Ice",
-        "Viridis (Pro) 🌈": "Viridis"
+        "Blues 🔵": "Blues",
+        "Reds 🔴": "Reds",
+        "Greens 🟢": "Greens",
+        "Purples 🟣": "Purples",
+        "Orange and Sun ☀️": "YlOrRd",
+        "Glacier ❄️": "Ice",
+        "Viridis🌈": "Viridis"
     }
     
     col_selector, _ = st.columns([1, 2])
     with col_selector:
-        seleccion = st.selectbox("Elige el estilo del mapa:", list(colores_dict.keys()), index=0)
+        seleccion = st.selectbox("Choose the style of the map:", list(colores_dict.keys()), index=0)
     
     escala_elegida = colores_dict[seleccion]
 
@@ -1282,10 +1296,10 @@ def render_organizer_tab(data):
         # Mostramos Año y Cantidad entre paréntesis
         st.subheader(f"{year} ({count_year})")
         
-        # Creamos un grid de 3 columnas para las tarjetas
-        cols = st.columns(3)
+        # Creamos un grid de 5 columnas para las tarjetas
+        cols = st.columns(5)
         for idx, (_, row) in enumerate(comps_year.iterrows()):
-            with cols[idx % 3]:
+            with cols[idx % 5]:
                 with st.container(border=True):
                     st.markdown(f"**{row['Nombre']}**")
                     st.caption(f"📍 {row['city']}, {row['country']}")
