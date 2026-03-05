@@ -6,7 +6,10 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 import pycountry
 import streamlit as st
+from collections import defaultdict
 import time
+
+
 
 # --- CACHÉ GLOBAL ---
 COMP_CACHE = {}
@@ -116,42 +119,60 @@ def fetch_names_from_wcif(comp_id):
 
 def get_wca_results(wca_id):
     """
-    Main function to get results. 
-    Optimized to fetch all competition info in parallel before processing.
+    Fetch results from the official WCA API and convert them
+    to the same structure the app expects.
     """
-    url = f"https://raw.githubusercontent.com/robiningelbrecht/wca-rest-api/master/api/persons/{wca_id}.json"
+
+    url = f"https://www.worldcubeassociation.org/api/v0/persons/{wca_id}/results"
     data = fetch_json(url)
-    if not data or "results" not in data: 
+
+    if not data:
         return pd.DataFrame()
 
-    # 1. Identificar todas las competiciones necesarias
-    all_comp_ids = list(data["results"].keys())
-    
-    # 2. Descarga paralela masiva (OPTIMIZACIÓN CLAVE)
+    # Build the same structure as the old API
+    results_by_comp = {}
+
+    for r in data:
+        comp = r["competition_id"]
+        event = r["event_id"]
+
+        if comp not in results_by_comp:
+            results_by_comp[comp] = {}
+        if event not in results_by_comp[comp]:
+            results_by_comp[comp][event] = []
+
+        results_by_comp[comp][event].append({
+            "round": r.get("round_type_id"),
+            "best": r.get("best"),
+            "average": r.get("average"),
+            "solves": r.get("attempts", [])
+        })
+
+    all_comp_ids = list(results_by_comp.keys())
+
+    # Parallel prefetch (your optimization)
     prefetch_competitions(all_comp_ids)
 
     rows = []
-    # Procesamos en orden inverso (más reciente primero normalmente)
     comp_ids_ordered = all_comp_ids[::-1]
 
     for comp_id in comp_ids_ordered:
-        comp_info = COMP_CACHE.get(comp_id) 
-        
-        # Extracción segura de datos
+        comp_info = COMP_CACHE.get(comp_id)
+
         comp_name = comp_info.get("name", comp_id) if comp_info else comp_id
         country_iso2 = comp_info.get("country") if comp_info else "Unknown"
-        
-        # Fecha: Intentamos parsear aquí para que el DataFrame tenga datetime real
         raw_date = comp_info.get("date", {}).get("from") if comp_info else None
-        
-        events = data["results"][comp_id]
+
+        events = results_by_comp[comp_id]
+
         for event_id, rounds in events.items():
             for r in reversed(rounds):
                 solves = r.get("solves", [])
+
                 rows.append({
                     "Competition": comp_id,
                     "CompName": comp_name,
-                    "CompDate": raw_date, # Se convierte a datetime abajo
+                    "CompDate": raw_date,
                     "Country": country_iso2,
                     "Event": event_id,
                     "Round": r.get("round"),
@@ -165,12 +186,13 @@ def get_wca_results(wca_id):
                 })
 
     df = pd.DataFrame(rows)
-    if df.empty: return df
-    
-    # Convertir fecha a datetime real para ordenamiento correcto
+    if df.empty:
+        return df
+
     df['CompDate'] = pd.to_datetime(df['CompDate'], errors='coerce')
 
-    # PR Logic
+    # ---- your PR logic stays exactly the same ----
+
     def clean_for_min(val):
         return float('inf') if (val is None or val <= 0) else val
 
@@ -178,30 +200,32 @@ def get_wca_results(wca_id):
     running_best_avg = {}
     pr_labels = []
 
-    # Sort by date ensures PR logic matches reality
-    # Ordenamos por Fecha y luego por Ronda para consistencia
     df = df.sort_values(by=["CompDate", "Round"], ascending=True)
 
     for idx, row in df.iterrows():
         e, s, a = row["Event"], clean_for_min(row["best_cs"]), clean_for_min(row["avg_cs"])
-        
+
         is_s_pr = s < running_best_single.get(e, float('inf'))
         is_a_pr = a < running_best_avg.get(e, float('inf'))
-        
-        if is_s_pr: running_best_single[e] = s
-        if is_a_pr: running_best_avg[e] = a
-        
+
+        if is_s_pr:
+            running_best_single[e] = s
+        if is_a_pr:
+            running_best_avg[e] = a
+
         label = None
-        if is_s_pr and is_a_pr: label = "sin+avg"
-        elif is_s_pr: label = "single"
-        elif is_a_pr: label = "average"
+        if is_s_pr and is_a_pr:
+            label = "sin+avg"
+        elif is_s_pr:
+            label = "single"
+        elif is_a_pr:
+            label = "average"
+
         pr_labels.append(label)
 
     df["pr"] = pr_labels
-    
-    # Retornamos el DF ordenado cronológicamente inverso (más nuevo arriba) para mostrar en tablas
-    return df.sort_values(by="CompDate", ascending=False).reset_index(drop=True)
 
+    return df.sort_values(by="CompDate", ascending=False).reset_index(drop=True)
 def flatten(obj, parent_key="", sep="."):
     flat = {}
     if isinstance(obj, dict):
@@ -589,9 +613,8 @@ def get_organized_competitions(name_to_search):
 if __name__ == "__main__":
     wcaid = "2016LOPE37"
     # get the name of the person
-    name = get_wcaid_info(wcaid).get("person.name")
-
-    print(name)
+    results = get_wca_results(wcaid)
+    print(results)
 
 
 
@@ -600,4 +623,3 @@ if __name__ == "__main__":
 
 
     
-
